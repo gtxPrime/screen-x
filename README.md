@@ -1,5 +1,7 @@
 <div align="center">
 
+  <img src="app/src/main/ic_launcher-playstore.png" alt="ScreenX Logo" width="120" height="120" />
+
 # ScreenX
 
 **Pure, powerful screen recording for Android. No limits, no nonsense.**
@@ -89,7 +91,7 @@ ScreenX is designed with modern Android development practices, ensuring scalabil
 ```
 d:\ScreenX
 │
-├── app/src/main/java/com/screenx/recorder/
+├── app/src/main/java/com/gxdevs/screenx/
 │   ├── data/
 │   │   └── SettingsManager.kt       # Manages recording and UI settings
 │   │

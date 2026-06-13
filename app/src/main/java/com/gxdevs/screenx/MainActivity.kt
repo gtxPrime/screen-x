@@ -28,12 +28,20 @@ import com.gxdevs.screenx.data.SettingsManager
 import com.gxdevs.screenx.service.ScreenRecordService
 import com.gxdevs.screenx.ui.screens.HomeScreen
 import com.gxdevs.screenx.ui.screens.SettingsScreen
+import com.gxdevs.screenx.ui.screens.GalleryScreen
+import com.gxdevs.screenx.ui.screens.VideoTrimmerScreen
 import com.gxdevs.screenx.ui.theme.ScreenXTheme
 import com.gxdevs.screenx.utils.RecordedVideo
 import com.gxdevs.screenx.utils.VideoHelper
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+enum class ScreenState {
+    HOME,
+    GALLERY,
+    TRIMMER
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -92,6 +100,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val adaptiveTheme by settingsManager.adaptiveThemeFlow.collectAsState(initial = false)
             ScreenXTheme(dynamicColor = adaptiveTheme) {
+                var currentScreen by remember { mutableStateOf(ScreenState.HOME) }
+                var selectedVideoForTrimming by remember { mutableStateOf<RecordedVideo?>(null) }
                 
                 // Track service state locally
                 LaunchedEffect(Unit) {
@@ -115,14 +125,52 @@ class MainActivity : ComponentActivity() {
                             .padding(innerPadding),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        HomeScreen(
-                            videos = recordedVideos,
-                            onStartRecordingClick = { handleRecordToggle() },
-                            onDeleteVideo = { deleteVideoFile(it) },
-                            isRecordingActive = isRecordingActive,
-                            settingsManager = settingsManager,
-                            onScreenshotClick = { triggerScreenshot() }
-                        )
+                        when (currentScreen) {
+                            ScreenState.HOME -> {
+                                HomeScreen(
+                                    videos = recordedVideos,
+                                    onStartRecordingClick = { handleRecordToggle() },
+                                    onDeleteVideo = { deleteVideoFile(it) },
+                                    isRecordingActive = isRecordingActive,
+                                    settingsManager = settingsManager,
+                                    onScreenshotClick = { triggerScreenshot() },
+                                    onViewAllClick = { currentScreen = ScreenState.GALLERY },
+                                    onTrimVideoClick = {
+                                        selectedVideoForTrimming = null
+                                        currentScreen = ScreenState.TRIMMER
+                                    }
+                                )
+                            }
+                            ScreenState.GALLERY -> {
+                                GalleryScreen(
+                                    videos = recordedVideos,
+                                    onBackClick = { currentScreen = ScreenState.HOME },
+                                    onDeleteVideo = { deleteVideoFile(it) },
+                                    onTrimVideoClick = { video ->
+                                        selectedVideoForTrimming = video
+                                        currentScreen = ScreenState.TRIMMER
+                                    },
+                                    settingsManager = settingsManager
+                                )
+                            }
+                            ScreenState.TRIMMER -> {
+                                VideoTrimmerScreen(
+                                    initialVideo = selectedVideoForTrimming,
+                                    videos = recordedVideos,
+                                    onBackClick = {
+                                        currentScreen = if (selectedVideoForTrimming == null) {
+                                            ScreenState.HOME
+                                        } else {
+                                            ScreenState.GALLERY
+                                        }
+                                    },
+                                    onTrimSuccess = {
+                                        refreshVideos()
+                                        currentScreen = ScreenState.GALLERY
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }

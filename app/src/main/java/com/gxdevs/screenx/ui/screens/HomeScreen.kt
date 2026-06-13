@@ -190,7 +190,9 @@ fun HomeScreen(
     onDeleteVideo: (RecordedVideo) -> Unit,
     isRecordingActive: Boolean,
     settingsManager: SettingsManager,
-    onScreenshotClick: () -> Unit
+    onScreenshotClick: () -> Unit,
+    onViewAllClick: () -> Unit,
+    onTrimVideoClick: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -907,7 +909,7 @@ fun HomeScreen(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.clickable {
-                            Toast.makeText(context, "Gallery feature coming soon!", Toast.LENGTH_SHORT).show()
+                            onViewAllClick()
                         }
                     )
                 }
@@ -974,7 +976,7 @@ fun HomeScreen(
                         .fillMaxWidth()
                         .height(80.dp)
                         .bouncyClickable {
-                            Toast.makeText(context, "Video Editor coming soon!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Trim feature coming soon!", Toast.LENGTH_SHORT).show()
                         }
                 ) {
                     Row(

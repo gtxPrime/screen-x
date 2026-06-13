@@ -23,6 +23,7 @@ class SettingsManager(private val context: Context) {
         val KEY_SHAKE_TO_STOP = booleanPreferencesKey("shake_to_stop")
         val KEY_ORIENTATION = stringPreferencesKey("orientation")
         val KEY_FLOATING_SHOW_MODE = stringPreferencesKey("floating_show_mode")
+        val KEY_GALLERY_GRID_VIEW = booleanPreferencesKey("gallery_grid_view")
     }
 
     val fpsFlow: Flow<Int> = context.dataStore.data.map { preferences ->
@@ -71,6 +72,10 @@ class SettingsManager(private val context: Context) {
 
     val floatingShowModeFlow: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[KEY_FLOATING_SHOW_MODE] ?: "Only when recording"
+    }
+
+    val galleryGridViewFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_GALLERY_GRID_VIEW] ?: true
     }
 
     suspend fun setFps(fps: Int) {
@@ -142,6 +147,12 @@ class SettingsManager(private val context: Context) {
     suspend fun setFloatingShowMode(mode: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_FLOATING_SHOW_MODE] = mode
+        }
+    }
+
+    suspend fun setGalleryGridView(isGridView: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_GALLERY_GRID_VIEW] = isGridView
         }
     }
 }
