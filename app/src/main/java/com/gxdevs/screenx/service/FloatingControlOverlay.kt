@@ -475,6 +475,17 @@ class FloatingControlOverlay(private val context: Context) {
         rootView = null; lifecycleOwner = null
     }
 
+    fun bringToFront() {
+        rootView?.let { view ->
+            try {
+                windowManager.removeViewImmediate(view)
+                windowManager.addView(view, layoutParams)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     // ── Dismiss-zone circle: bottom-center circular trash target ──────
     @Suppress("DEPRECATION")
     private fun showDismissGradient() {

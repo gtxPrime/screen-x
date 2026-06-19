@@ -790,6 +790,7 @@ class ScreenRecordService : LifecycleService() {
             brushDrawingOverlay?.show {
                 dismissBrushOverlay()
             }
+            floatingControlOverlay?.bringToFront()
         } else {
             dismissBrushOverlay()
         }
