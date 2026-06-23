@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import com.gxdevs.screenx.data.SettingsManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import androidx.core.net.toUri
 
 /**
  * Transparent helper activity launched from the Quick Settings tile
@@ -31,7 +32,7 @@ class TileHelperActivity : ComponentActivity() {
     private val overlayPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
+        if (Settings.canDrawOverlays(this)) {
             checkPermissionsAndStartProjection()
         } else {
             Toast.makeText(this, "Overlay permission required", Toast.LENGTH_SHORT).show()
@@ -60,7 +61,7 @@ class TileHelperActivity : ComponentActivity() {
     private val captureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+        if (result.resultCode == RESULT_OK && result.data != null) {
             startRecordingService(result.resultCode, result.data!!)
         } else {
             Toast.makeText(this, "Screen capture permission denied", Toast.LENGTH_SHORT).show()
@@ -86,11 +87,11 @@ class TileHelperActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             val showFloating = settingsManager.showFloatingFlow.first()
-            if (showFloating && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this@TileHelperActivity)) {
+            if (showFloating && !Settings.canDrawOverlays(this@TileHelperActivity)) {
                 Toast.makeText(this@TileHelperActivity, "Please enable 'Display over other apps'", Toast.LENGTH_LONG).show()
                 val intent = Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+                    "package:$packageName".toUri()
                 )
                 overlayPermissionLauncher.launch(intent)
             } else {
@@ -145,10 +146,6 @@ class TileHelperActivity : ComponentActivity() {
             putExtra(ScreenRecordService.EXTRA_RESULT_CODE, resultCode)
             putExtra(ScreenRecordService.EXTRA_RESULT_DATA, resultData)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        startForegroundService(serviceIntent)
     }
 }

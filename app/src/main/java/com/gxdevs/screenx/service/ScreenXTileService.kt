@@ -15,7 +15,6 @@ import com.gxdevs.screenx.R
  * - When idle: shows INACTIVE state, tap → opens app to start recording
  * - Supports Android 7.0+ (API 24)
  */
-@RequiresApi(Build.VERSION_CODES.N)
 class ScreenXTileService : TileService() {
 
     override fun onTileAdded() {

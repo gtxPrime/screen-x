@@ -206,7 +206,7 @@ class ScreenRecordService : LifecycleService() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("ScreenX Recorder")
             .setContentText(status)
-            .setSmallIcon(com.gxdevs.screenx.R.mipmap.ic_launcher_monochrome)
+            .setSmallIcon(com.gxdevs.screenx.R.drawable.ic_notification)
             .setContentIntent(pendingMainIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
