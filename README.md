@@ -22,7 +22,14 @@
     <a href="#">
       <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white&style=for-the-badge" alt="Platform" />
     </a>
+    <a href="https://github.com/gtxprime/screen-x/releases/latest">
+      <img src="https://img.shields.io/github/downloads/gtxprime/screen-x/total?label=Downloads&logo=github&style=for-the-badge&color=brightgreen" alt="GitHub Downloads" />
+    </a>
   </p>
+
+  <a href="https://github.com/gtxprime/screen-x/releases/latest">
+    <img src="https://raw.githubusercontent.com/gtxprime/mind-mint/main/docs/assets/github_badge.png" height="96" alt="Get it on GitHub" />
+  </a>
 
   <h3>
     <a href="#-features">Features</a>
@@ -42,34 +49,64 @@
 
 ## 📱 About ScreenX
 
-**ScreenX** is a modern, high-performance screen recording utility built for Android. It prioritizes smooth performance, minimal system overhead, and useful productivity features like live annotations and floating overlays. Whether you're recording gameplay, creating app walkthroughs, or capturing bug reports, ScreenX handles it with style.
+> [!NOTE]
+> **ScreenX** is a modern, high-performance screen recording utility built for Android. It prioritizes smooth performance, minimal system overhead, and useful productivity features like live annotations and floating overlays. Whether you're recording gameplay, creating app walkthroughs, or capturing bug reports, ScreenX handles it with style.
 
 ---
 
-## 🚀 Features
+## <a id="-features"></a>🚀 Core Features
 
-### 🎥 High-Fidelity Recording
-* **Custom Configurations:** Adjust video resolution (up to 1080p+), frame rates (30 FPS, 60 FPS), and video/audio bitrates to balance quality and file size.
-* **Format Control:** Generates highly compatible `.mp4` video files using Android's hardware-accelerated MediaCodec API.
-* **Dynamic Orientation:** Automatically adapts recording orientation based on your device state.
-
-### 🎙️ Audio Capture
-* **Audio Sources:** Record clear external microphone audio or internal system audio (Android 10+).
-* **Custom Quality:** Configure sample rates and audio bitrates for crystal-clear sound.
-
-### 🖌️ Live Annotations & Brush Tools
-* **Draw on Screen:** Activate the drawing overlay to annotate, circle, or write directly on top of active apps while recording.
-* **Custom Styling:** Choose from standard brush colors (Red, Green, Blue, Yellow) and adjust brush size dynamically.
-* **Quick Clear:** Easily erase strokes or clear the entire canvas with a single tap from the overlay controls.
-
-### 🎛️ Floating Control Panel
-* **Quick Access:** A non-intrusive overlay button that expands into standard record/pause/stop and brush tools.
-* **Smart Placement:** Drag-and-drop floating widget that snaps to the edges of the screen and remembers its position.
-* **Auto-Hide:** Automatically hides itself during inactive periods or shifts visibility according to settings.
-
-### ⚡ Quick Settings Tile Integration
-* **One-Tap Recording:** Initiate or stop screen recordings instantly directly from the Android Quick Settings panel without opening the app UI.
-* **Seamless Launching:** Handles foreground service and media projection requests seamlessly in the background.
+<table width="100%">
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎥 High-Fidelity Recording</h3>
+      <p>Configure video output exactly to your device and storage needs.</p>
+      <ul>
+        <li><b>Custom Configurations:</b> Adjust resolution (up to 1080p+), frame rates (30/60 FPS), and bitrates.</li>
+        <li><b>Format Control:</b> Output <code>.mp4</code> video files using hardware-accelerated MediaCodec API.</li>
+        <li><b>Dynamic Orientation:</b> Adapts recording orientation automatically based on device state.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🎙️ Capture Options</h3>
+      <p>Clean sound options for any recording context.</p>
+      <ul>
+        <li><b>Audio Sources:</b> Record external microphone audio or internal system audio (Android 10+).</li>
+        <li><b>Custom Quality:</b> Configure sample rates and audio bitrates for crystal-clear sound.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🖌️ Live Annotations & Brush</h3>
+      <p>Annotate your screen on-the-fly while recording is active.</p>
+      <ul>
+        <li><b>Draw on Screen:</b> Canvas overlay lets you draw directly on top of active apps.</li>
+        <li><b>Custom Styling:</b> Choose brush colors dynamically and adjust brush size.</li>
+        <li><b>Quick Actions:</b> Erase strokes or clear the canvas instantly.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🎛️ Floating Control Panel</h3>
+      <p>Non-intrusive widget for quick, easy management.</p>
+      <ul>
+        <li><b>Quick Access:</b> Expanded controls for record, pause, stop, and brush tools.</li>
+        <li><b>Smart Snapping:</b> Drag-and-drop widget snaps to screen edges and saves position.</li>
+        <li><b>Auto-Hide:</b> Fades/hides during inactivity or user interaction.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" valign="top">
+      <h3>⚡ Quick Settings Tile Integration</h3>
+      <p>Start recording in a single tap without opening the main app interface.</p>
+      <ul>
+        <li><b>One-Tap Recording:</b> Instantly initiate or stop recordings directly from Android Quick Settings.</li>
+        <li><b>Background Launching:</b> Handles foreground service and media projection requests seamlessly.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -89,7 +126,7 @@ ScreenX is designed with modern Android development practices, ensuring scalabil
 ## 📂 Project Structure
 
 ```
-d:\ScreenX
+screen-x
 │
 ├── app/src/main/java/com/gxdevs/screenx/
 │   ├── data/
