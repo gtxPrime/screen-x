@@ -305,14 +305,18 @@ class MainActivity : ComponentActivity() {
                 permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
             }
 
-            // Storage Permission (Android 12 and below)
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                    permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            } else {
+            // Storage Permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
                     permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+            } else {
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
             }
 
@@ -328,10 +332,12 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: true
-        val storageGranted = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] ?: true
-        } else {
+        val storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions[Manifest.permission.READ_MEDIA_VIDEO] ?: true
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissions[Manifest.permission.READ_EXTERNAL_STORAGE] ?: true
+        } else {
+            permissions[Manifest.permission.WRITE_EXTERNAL_STORAGE] ?: true
         }
 
         if (recordAudioGranted && storageGranted) {

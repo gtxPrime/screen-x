@@ -33,3 +33,10 @@ Thumbs.db
 *.jks
 *.keystore
 secrets.properties
+
+# Kotlin
+.kotlin/
+
+# Release artifacts
+**/release/
+

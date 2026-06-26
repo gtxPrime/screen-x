@@ -1,10 +1,12 @@
+import com.android.build.api.dsl.ApplicationExtension
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-configure<com.android.build.api.dsl.ApplicationExtension> {
+configure<ApplicationExtension> {
     namespace = "com.gxdevs.screenx"
     compileSdk = 37
 
@@ -12,8 +14,8 @@ configure<com.android.build.api.dsl.ApplicationExtension> {
         applicationId = "com.gxdevs.screenx"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
