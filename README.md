@@ -56,57 +56,46 @@
 
 ## <a id="-features"></a>🚀 Core Features
 
-<table width="100%">
-  <tr>
-    <td width="50%" valign="top">
-      <h3>🎥 High-Fidelity Recording</h3>
-      <p>Configure video output exactly to your device and storage needs.</p>
-      <ul>
-        <li><b>Custom Configurations:</b> Adjust resolution (up to 1080p+), frame rates (30/60 FPS), and bitrates.</li>
-        <li><b>Format Control:</b> Output <code>.mp4</code> video files using hardware-accelerated MediaCodec API.</li>
-        <li><b>Dynamic Orientation:</b> Adapts recording orientation automatically based on device state.</li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🎙️ Capture Options</h3>
-      <p>Clean sound options for any recording context.</p>
-      <ul>
-        <li><b>Audio Sources:</b> Record external microphone audio or internal system audio (Android 10+).</li>
-        <li><b>Custom Quality:</b> Configure sample rates and audio bitrates for crystal-clear sound.</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>🖌️ Live Annotations & Brush</h3>
-      <p>Annotate your screen on-the-fly while recording is active.</p>
-      <ul>
-        <li><b>Draw on Screen:</b> Canvas overlay lets you draw directly on top of active apps.</li>
-        <li><b>Custom Styling:</b> Choose brush colors dynamically and adjust brush size.</li>
-        <li><b>Quick Actions:</b> Erase strokes or clear the canvas instantly.</li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🎛️ Floating Control Panel</h3>
-      <p>Non-intrusive widget for quick, easy management.</p>
-      <ul>
-        <li><b>Quick Access:</b> Expanded controls for record, pause, stop, and brush tools.</li>
-        <li><b>Smart Snapping:</b> Drag-and-drop widget snaps to screen edges and saves position.</li>
-        <li><b>Auto-Hide:</b> Fades/hides during inactivity or user interaction.</li>
-      </ul>
-    </td>
-  </tr>
-  <tr>
-    <td colspan="2" valign="top">
-      <h3>⚡ Quick Settings Tile Integration</h3>
-      <p>Start recording in a single tap without opening the main app interface.</p>
-      <ul>
-        <li><b>One-Tap Recording:</b> Instantly initiate or stop recordings directly from Android Quick Settings.</li>
-        <li><b>Background Launching:</b> Handles foreground service and media projection requests seamlessly.</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+### 🎥 High-Fidelity Recording
+> Configure video output exactly to your device and storage needs.
+
+* ⚙️ **Custom Configurations:** Adjust resolution (up to 1080p+), frame rates (30/60 FPS), and bitrates.
+* 🎞️ **Format Control:** Output `.mp4` video files using hardware-accelerated MediaCodec API.
+* 🔄 **Dynamic Orientation:** Adapts recording orientation automatically based on device state.
+
+---
+
+### 🎙️ Capture Options
+> Clean sound options for any recording context.
+
+* 🎤 **Audio Sources:** Record external microphone audio or internal system audio (Android 10+).
+* 🎚️ **Custom Quality:** Configure sample rates and audio bitrates for crystal-clear sound.
+
+---
+
+### 🖌️ Live Annotations & Brush
+> Annotate your screen on-the-fly while recording is active.
+
+* 🎨 **Draw on Screen:** Canvas overlay lets you draw directly on top of active apps.
+* 🖌️ **Custom Styling:** Choose brush colors dynamically and adjust brush size.
+* 🧹 **Quick Actions:** Erase strokes or clear the canvas instantly.
+
+---
+
+### 🎛️ Floating Control Panel
+> Non-intrusive widget for quick, easy management.
+
+* ⚡ **Quick Access:** Expanded controls for record, pause, stop, and brush tools.
+* 🧲 **Smart Snapping:** Drag-and-drop widget snaps to screen edges and saves position.
+* 👁️ **Auto-Hide:** Fades/hides during inactivity or user interaction.
+
+---
+
+### ⚡ Quick Settings Tile Integration
+> Start recording in a single tap without opening the main app interface.
+
+* 🔘 **One-Tap Recording:** Instantly initiate or stop recordings directly from Android Quick Settings.
+* ⚙️ **Background Launching:** Handles foreground service and media projection requests seamlessly.
 
 ---
 
