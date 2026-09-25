@@ -18,6 +18,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -107,6 +109,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -554,10 +557,12 @@ fun HomeScreen(
         }
     } else {
         // Portrait Layout
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
+                .verticalScroll(scrollState)
         ) {
             // Header Bar
             Row(
@@ -606,19 +611,61 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(216.dp),
+                        .height(236.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Standard MediaProjection Record Card (Full Left Height)
+                    // Standard MediaProjection Record Card (Inverted Theme: Dark in light theme, Light in dark theme)
+                    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                    val recordCardBg = if (isRecordingActive) {
+                        MaterialTheme.colorScheme.error
+                    } else if (isDarkTheme) {
+                        Color(0xFFF3F4F6) // Light in dark theme
+                    } else {
+                        Color(0xFF14161B) // Dark in light theme
+                    }
+
+                    val recordCardContent = if (isRecordingActive) {
+                        MaterialTheme.colorScheme.onError
+                    } else if (isDarkTheme) {
+                        Color(0xFF111827) // Dark text & icon in dark theme
+                    } else {
+                        Color(0xFFF9FAFB) // Light text & icon in light theme
+                    }
+
+                    val recordCardSubContent = if (isRecordingActive) {
+                        MaterialTheme.colorScheme.onError.copy(alpha = 0.8f)
+                    } else if (isDarkTheme) {
+                        Color(0xFF4B5563) // Refined dark-gray subtitle in dark theme
+                    } else {
+                        Color(0xFF9CA3AF) // Refined light-gray subtitle in light theme
+                    }
+
+                    val recordBadgeBg = if (isRecordingActive) {
+                        MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
+                    } else if (isDarkTheme) {
+                        Color(0xFFE5E7EB)
+                    } else {
+                        Color(0xFF232730)
+                    }
+
+                    val recordBadgeBorder = if (isRecordingActive) {
+                        MaterialTheme.colorScheme.onError.copy(alpha = 0.5f)
+                    } else if (isDarkTheme) {
+                        Color(0xFFD1D5DB)
+                    } else {
+                        Color(0xFF374151)
+                    }
+
                     Card(
                         shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surface
+                            containerColor = recordCardBg
                         ),
                         border = BorderStroke(
                             1.dp,
                             if (isRecordingActive) MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                            else if (isDarkTheme) Color(0xFFE5E7EB).copy(alpha = 0.8f)
+                            else Color(0xFF262A33)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -637,22 +684,20 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(44.dp)
                                     .clip(CircleShape)
-                                    .background(
-                                        if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
-                                        else MaterialTheme.colorScheme.primaryContainer
-                                    )
+                                    .background(recordBadgeBg)
+                                    .border(1.dp, recordBadgeBorder, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Lucide.CircleDot,
                                     contentDescription = null,
-                                    tint = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
+                                    tint = recordCardContent,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
                             Column {
                                 Text(
                                     text = if (isRecordingActive) "Recording" else "Record",
-                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface,
+                                    color = recordCardContent,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold,
                                     lineHeight = 24.sp
@@ -660,11 +705,10 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isRecordingActive) "Tap to stop" else "Tap to start",
-                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.75f)
-                                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp,
+                                    color = recordCardSubContent,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
-                                    lineHeight = 14.sp
+                                    lineHeight = 15.sp
                                 )
                             }
                         }
@@ -692,67 +736,47 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (freeSpaceGB < 2) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                            else MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (freeSpaceGB < 2) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                            else MaterialTheme.colorScheme.outlineVariant,
+                                            CircleShape
+                                        )
                                 ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (freeSpaceGB < 2) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                                                else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
-                                            )
-                                    ) {
-                                        Icon(
-                                            imageVector = Lucide.HardDrive,
-                                            contentDescription = null,
-                                            tint = if (freeSpaceGB < 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    
-                                    // Badge: Indicates Safe Stop protection
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                color = if (safeStorageStop) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
-                                                else MaterialTheme.colorScheme.surfaceVariant,
-                                                shape = RoundedCornerShape(6.dp)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = if (safeStorageStop) "Safe Stop" else "$usedPercent% Used",
-                                            color = if (safeStorageStop) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Lucide.HardDrive,
+                                        contentDescription = null,
+                                        tint = if (freeSpaceGB < 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(17.dp)
+                                    )
                                 }
                                 
                                 Column {
                                     Text(
                                         text = "$freeSpaceGB GB",
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 16.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         lineHeight = 18.sp
                                     )
-                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "Available Space",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 10.sp,
-                                        lineHeight = 12.sp,
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -775,15 +799,16 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(32.dp)
+                                        .size(34.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                                 ) {
                                     Icon(
                                         imageVector = when (audioSource) {
@@ -792,32 +817,32 @@ fun HomeScreen(
                                             else -> Lucide.Mic
                                         },
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.secondary,
-                                        modifier = Modifier.size(16.dp)
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(17.dp)
                                     )
                                 }
                                 
                                 Column {
                                     Text(
                                         text = when (audioSource) {
-                                            "System" -> "Internal Audio"
-                                            "MicSystem" -> "Mic + Internal"
-                                            "None" -> "No Audio"
+                                            "System" -> "Device Audio"
+                                            "MicSystem" -> "Mic + Device"
+                                            "None" -> "Muted"
                                             else -> "Microphone"
                                         },
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 14.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         lineHeight = 18.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.height(1.dp))
+                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "Audio Source",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 10.sp,
-                                        lineHeight = 12.sp
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.sp
                                     )
                                 }
                             }
@@ -825,11 +850,11 @@ fun HomeScreen(
                     }
                 }
 
-                // Row 2: Resolution & Orientation side-by-side
+                // Row 2: Resolution & Orientation side-by-side (Identical vertical layout to Storage & Audio)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(76.dp),
+                        .height(112.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Resolution Card
@@ -852,45 +877,44 @@ fun HomeScreen(
                                 coroutineScope.launch { settingsManager.setResolution(nextRes) }
                             }
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Lucide.Video,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(verticalArrangement = Arrangement.Center) {
+                            Column {
                                 Text(
-                                    text = "RESOLUTION",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    lineHeight = 11.sp,
-                                    letterSpacing = 0.4.sp
-                                )
-                                Text(
-                                    text = "$resolution / ${fps}fps",
+                                    text = resolution,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    lineHeight = 16.sp,
-                                    letterSpacing = (-0.4).sp,
+                                    lineHeight = 18.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${fps} FPS Video",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -915,18 +939,19 @@ fun HomeScreen(
                                 coroutineScope.launch { settingsManager.setOrientation(nextOri) }
                             }
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = when (orientation) {
@@ -936,28 +961,26 @@ fun HomeScreen(
                                     },
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(verticalArrangement = Arrangement.Center) {
+                            Column {
                                 Text(
-                                    text = "ORIENTATION",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    lineHeight = 11.sp,
-                                    letterSpacing = 0.4.sp
-                                )
-                                Text(
-                                    text = if (orientation == "Auto") "Auto Rotate" else "$orientation",
+                                    text = if (orientation == "Auto") "Auto Rotate" else orientation,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
-                                    lineHeight = 16.sp,
-                                    letterSpacing = (-0.4).sp,
+                                    lineHeight = 18.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Orientation",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -986,7 +1009,7 @@ fun HomeScreen(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(76.dp)
+                            .height(78.dp)
                             .bouncyClickable {
                                 if (!isAdbRecordingActual) {
                                     if (!adbPaired) {
@@ -1016,9 +1039,15 @@ fun HomeScreen(
                                     .clip(CircleShape)
                                     .background(
                                         if (isAdbRecording)
-                                            MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
                                         else
-                                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (isAdbRecording) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                                        else MaterialTheme.colorScheme.outlineVariant,
+                                        CircleShape
                                     )
                             ) {
                                 Icon(
@@ -1027,7 +1056,7 @@ fun HomeScreen(
                                     tint = if (isAdbRecording)
                                         MaterialTheme.colorScheme.error
                                     else
-                                        MaterialTheme.colorScheme.secondary,
+                                        MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -1088,7 +1117,8 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(32.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                                     .bouncyClickable { showAdbLimitationsDialog = true },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1141,7 +1171,7 @@ fun HomeScreen(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(76.dp)
+                            .height(78.dp)
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -1196,7 +1226,7 @@ fun HomeScreen(
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(76.dp)
+                        .height(78.dp)
                         .bouncyClickable {
                             onTrimVideoClick()
                         }
@@ -1209,6 +1239,7 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Row(
+                            modifier = Modifier.weight(1f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
@@ -1216,12 +1247,13 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Lucide.Scissors,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.secondary,
+                                    tint = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -1236,7 +1268,7 @@ fun HomeScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Edit your recent captures",
+                                    text = "Edit and cut your captures",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     lineHeight = 14.sp
@@ -1249,12 +1281,13 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                         ) {
                             Icon(
                                 imageVector = Lucide.ChevronRight,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -1327,7 +1360,8 @@ fun StatusToggleItem(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant) // Beige cream background
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
         ) {
             Icon(
                 imageVector = icon,
@@ -1484,17 +1518,14 @@ fun RecentVideoCard(
 }
 
 @Composable
-fun OrionSectionHeader(
-    title: String,
-    modifier: Modifier = Modifier
-) {
+fun OrionSectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
-        text = title,
+        text = text,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
-        letterSpacing = 1.2.sp,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(start = 16.dp, top = 6.dp, bottom = 4.dp)
+        letterSpacing = 1.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier.padding(start = 4.dp, top = 10.dp, bottom = 2.dp)
     )
 }
 
@@ -1504,10 +1535,8 @@ fun OrionStackedGroupCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 2.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
         modifier = modifier.fillMaxWidth(),
         content = {
             Column(content = content)
@@ -1518,9 +1547,9 @@ fun OrionStackedGroupCard(
 @Composable
 fun OrionSettingsDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(start = 72.dp, end = 18.dp),
-        thickness = 0.8.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        modifier = Modifier.padding(start = 66.dp, end = 16.dp),
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     )
 }
 
@@ -1532,28 +1561,29 @@ fun OrionSettingsSwitchItem(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.primary,
-    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    iconBackground: Color = MaterialTheme.colorScheme.surfaceVariant
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(iconBackground),
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(iconBackground)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
 
@@ -1566,21 +1596,24 @@ fun OrionSettingsSwitchItem(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                softWrap = true,
+                lineHeight = 20.sp
             )
             if (!subtitle.isNullOrEmpty()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    lineHeight = 15.sp,
+                    softWrap = true
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(8.dp))
 
         Switch(
             checked = checked,
@@ -1603,8 +1636,8 @@ fun OrionSettingsValueItem(
     subtitle: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.primary,
-    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    iconBackground: Color = MaterialTheme.colorScheme.surfaceVariant,
     showChevron: Boolean = true
 ) {
     Row(
@@ -1616,16 +1649,17 @@ fun OrionSettingsValueItem(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(iconBackground),
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(iconBackground)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
 
@@ -1639,8 +1673,8 @@ fun OrionSettingsValueItem(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                softWrap = true,
+                lineHeight = 20.sp
             )
             if (!subtitle.isNullOrEmpty()) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -1649,38 +1683,30 @@ fun OrionSettingsValueItem(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Normal,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    lineHeight = 16.sp,
+                    softWrap = true
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.widthIn(max = 130.dp)
-            ) {
-                Text(
-                    text = value,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                )
-            }
+            Text(
+                text = value,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+            )
             if (showChevron) {
                 Icon(
                     imageVector = Lucide.ChevronRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(18.dp)
+                    tint = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -1695,8 +1721,8 @@ fun OrionSettingsInfoItem(
     badge: String? = null,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.primary,
-    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    iconBackground: Color = MaterialTheme.colorScheme.surfaceVariant
 ) {
     Row(
         modifier = modifier
@@ -1707,16 +1733,17 @@ fun OrionSettingsInfoItem(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(13.dp))
-                .background(iconBackground),
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(iconBackground)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = iconTint,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
 
@@ -1729,7 +1756,9 @@ fun OrionSettingsInfoItem(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                softWrap = true,
+                lineHeight = 20.sp
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
@@ -1737,23 +1766,31 @@ fun OrionSettingsInfoItem(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 16.sp
+                lineHeight = 16.sp,
+                softWrap = true
             )
         }
 
         if (badge != null) {
-            Spacer(modifier = Modifier.width(10.dp))
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            Spacer(modifier = Modifier.width(12.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
                     text = badge,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
                 )
+                if (onClick != null) {
+                    Icon(
+                        imageVector = Lucide.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
@@ -1761,7 +1798,7 @@ fun OrionSettingsInfoItem(
 
 @Composable
 fun BottomSheetSectionHeader(title: String) {
-    OrionSectionHeader(title = title)
+    OrionSectionHeader(text = title)
 }
 
 @Composable
@@ -2481,175 +2518,171 @@ private fun AdbSetupStep(number: String, text: String) {
 
 // ─── ADB Limitations Info Dialog ────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdbLimitationsDialog(
     onDismiss: () -> Unit,
     onConfirmEnable: (() -> Unit)? = null
 ) {
-    Dialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            modifier = Modifier
-                .fillMaxWidth(0.93f)
-        ) {
-            Column(
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = {
+            Box(
                 modifier = Modifier
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(top = 12.dp, bottom = 8.dp)
+                    .size(width = 36.dp, height = 4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Title Row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Title Row
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
-                    ) {
-                        Icon(
-                            imageVector = Lucide.Zap,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Lucide.Zap,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Column {
+                    Text(
+                        text = if (onConfirmEnable != null) "Enable Stealth Recording" else "Stealth Recording",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (onConfirmEnable != null) "Review important details before enabling" else "Features & limitations",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Emerald banner: Fully Undetectable (High contrast in both light & dark)
+            val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+            val undetectableAccent = if (isDarkTheme) Color(0xFF4ADE80) else Color(0xFF15803D)
+            val undetectableBg = if (isDarkTheme) Color(0xFF14532D).copy(alpha = 0.35f) else Color(0xFFDCFCE7)
+            val undetectableBorder = if (isDarkTheme) Color(0xFF22C55E).copy(alpha = 0.4f) else Color(0xFF86EFAC)
+            val undetectableBody = if (isDarkTheme) Color(0xFFE2E8F0) else Color(0xFF166534)
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = undetectableBg,
+                border = BorderStroke(1.dp, undetectableBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Lucide.Shield,
+                        contentDescription = null,
+                        tint = undetectableAccent,
+                        modifier = Modifier.size(20.dp)
+                    )
                     Column {
                         Text(
-                            text = if (onConfirmEnable != null) "Enable Stealth Recording" else "Stealth Recording",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = (-0.5).sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = "Fully Undetectable",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = undetectableAccent
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (onConfirmEnable != null) "Please review important details" else "How it works & limitations",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "Bypasses capture detection in Snapchat, Instagram, and banking apps without triggering alerts.",
+                            fontSize = 11.sp,
+                            color = undetectableBody,
+                            lineHeight = 15.sp
                         )
                     }
                 }
+            }
 
-                // Stealth badge
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = EmeraldAccent.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, EmeraldAccent.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
+            // Limitation items
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AdbLimitationRow(
+                    icon = Lucide.VolumeX,
+                    label = "No Audio Capture",
+                    detail = "Stealth Recording captures video only; audio is not supported by Android's internal engine.",
+                    isWarning = true
+                )
+                AdbLimitationRow(
+                    icon = Lucide.TriangleAlert,
+                    label = "3-Minute Session Limit",
+                    detail = "Android limits screenrecord sessions to 3 minutes. ScreenX automatically restarts in segments.",
+                    isWarning = true
+                )
+                AdbLimitationRow(
+                    icon = Lucide.Usb,
+                    label = "One-Time Wireless Pairing",
+                    detail = "Requires wireless debugging pairing once on Android 11+.",
+                    isWarning = false
+                )
+            }
+
+            // Action buttons
+            if (onConfirmEnable != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            imageVector = Lucide.Shield,
-                            contentDescription = null,
-                            tint = EmeraldAccent,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Fully Undetectable",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = EmeraldAccent
-                            )
-                            Text(
-                                text = "Apps like Snapchat, Instagram, and banking apps cannot detect Stealth Recording — it bypasses their screenshot/screen-record detection entirely.",
-                                fontSize = 12.sp,
-                                color = EmeraldAccent.copy(alpha = 0.9f),
-                                lineHeight = 17.sp
-                            )
-                        }
-                    }
-                }
-
-                // Limitation items
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    AdbLimitationRow(
-                        icon = Lucide.VolumeX,
-                        label = "No Audio Capture",
-                        detail = "Stealth Recording cannot capture microphone or system audio. Use standard recording mode if audio is needed.",
-                        isWarning = true
-                    )
-                    AdbLimitationRow(
-                        icon = Lucide.TriangleAlert,
-                        label = "3-Minute Segment Limit",
-                        detail = "Android's built-in screenrecord has a hard 3-minute maximum per session. ScreenX auto-restarts in segments to work around this. We're actively working on extending this limit — coming soon!",
-                        isWarning = true
-                    )
-                    AdbLimitationRow(
-                        icon = Lucide.Usb,
-                        label = "One-Time Wireless Pairing",
-                        detail = "Stealth Recording requires pairing ScreenX with itself once via Android's Wireless Debugging (Android 11+). After that, it works silently forever.",
-                        isWarning = false
-                    )
-                    AdbLimitationRow(
-                        icon = Lucide.Smartphone,
-                        label = "Android 11+ Required",
-                        detail = "Stealth Recording pairing (loopback) is only available on Android 11 (API 30) and above. Older devices fall back to standard recording automatically.",
-                        isWarning = false
-                    )
-                }
-
-                // Action buttons
-                if (onConfirmEnable != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = onDismiss,
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        ) {
-                            Text(
-                                "Cancel",
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onConfirmEnable,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Text(
-                                "I Understand, Enable",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                        }
-                    }
-                } else {
                     TextButton(
                         onClick = onDismiss,
-                        modifier = Modifier.align(Alignment.End),
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancel", fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(
+                        onClick = onConfirmEnable,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) {
-                        Text(
-                            "Got it",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
-                        )
+                        Text("Enable", fontWeight = FontWeight.Bold)
                     }
+                }
+            } else {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                ) {
+                    Text("Got it", fontWeight = FontWeight.Bold)
                 }
             }
         }

@@ -20,6 +20,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -183,63 +192,77 @@ class MainActivity : ComponentActivity() {
                             .padding(innerPadding),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        when (currentScreen) {
-                            ScreenState.HOME -> {
-                                HomeScreen(
-                                    videos = recordedVideos,
-                                    onStartRecordingClick = { handleRecordToggle() },
-                                    onAdbRecordClick = { handleAdbRecordToggle() },
-                                    onDeleteVideo = { deleteVideoFile(it) },
-                                    isRecordingActive = isRecordingActive,
-                                    settingsManager = settingsManager,
-                                    onScreenshotClick = { triggerScreenshot() },
-                                    onViewAllClick = { currentScreen = ScreenState.GALLERY },
-                                    onTrimVideoClick = {
-                                        selectedVideoForTrimming = null
-                                        currentScreen = ScreenState.TRIMMER
-                                    },
-                                    onSettingsClick = { currentScreen = ScreenState.SETTINGS }
-                                )
-                            }
-                            ScreenState.SETTINGS -> {
-                                SettingsScreen(
-                                    onBackClick = { currentScreen = ScreenState.HOME },
-                                    settingsManager = settingsManager
-                                )
-                            }
-                            ScreenState.GALLERY -> {
-                                GalleryScreen(
-                                    videos = recordedVideos,
-                                    onBackClick = { currentScreen = ScreenState.HOME },
-                                    onDeleteVideo = { deleteVideoFile(it) },
-                                    onTrimVideoClick = { video ->
-                                        selectedVideoForTrimming = video
-                                        currentScreen = ScreenState.TRIMMER
-                                    },
-                                    settingsManager = settingsManager
-                                )
-                            }
-                            ScreenState.TRIMMER -> {
-                                VideoTrimmerScreen(
-                                    initialVideo = selectedVideoForTrimming,
-                                    videos = recordedVideos,
-                                    onBackClick = {
-                                        currentScreen = if (selectedVideoForTrimming == null) {
-                                            ScreenState.HOME
-                                        } else {
-                                            ScreenState.GALLERY
+                        AnimatedContent(
+                            targetState = currentScreen,
+                            transitionSpec = {
+                                if (targetState == ScreenState.SETTINGS || targetState == ScreenState.GALLERY || targetState == ScreenState.TRIMMER) {
+                                    (slideInHorizontally(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(animationSpec = tween(220)))
+                                        .togetherWith(slideOutHorizontally(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { -it / 3 } + fadeOut(animationSpec = tween(180)))
+                                } else {
+                                    (slideInHorizontally(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { -it / 3 } + fadeIn(animationSpec = tween(220)))
+                                        .togetherWith(slideOutHorizontally(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it } + fadeOut(animationSpec = tween(180)))
+                                }
+                            },
+                            label = "ScreenTransition"
+                        ) { screen ->
+                            when (screen) {
+                                ScreenState.HOME -> {
+                                    HomeScreen(
+                                        videos = recordedVideos,
+                                        onStartRecordingClick = { handleRecordToggle() },
+                                        onAdbRecordClick = { handleAdbRecordToggle() },
+                                        onDeleteVideo = { deleteVideoFile(it) },
+                                        isRecordingActive = isRecordingActive,
+                                        settingsManager = settingsManager,
+                                        onScreenshotClick = { triggerScreenshot() },
+                                        onViewAllClick = { currentScreen = ScreenState.GALLERY },
+                                        onTrimVideoClick = {
+                                            selectedVideoForTrimming = null
+                                            currentScreen = ScreenState.TRIMMER
+                                        },
+                                        onSettingsClick = { currentScreen = ScreenState.SETTINGS }
+                                    )
+                                }
+                                ScreenState.SETTINGS -> {
+                                    SettingsScreen(
+                                        onBackClick = { currentScreen = ScreenState.HOME },
+                                        settingsManager = settingsManager
+                                    )
+                                }
+                                ScreenState.GALLERY -> {
+                                    GalleryScreen(
+                                        videos = recordedVideos,
+                                        onBackClick = { currentScreen = ScreenState.HOME },
+                                        onDeleteVideo = { deleteVideoFile(it) },
+                                        onTrimVideoClick = { video ->
+                                            selectedVideoForTrimming = video
+                                            currentScreen = ScreenState.TRIMMER
+                                        },
+                                        settingsManager = settingsManager
+                                    )
+                                }
+                                ScreenState.TRIMMER -> {
+                                    VideoTrimmerScreen(
+                                        initialVideo = selectedVideoForTrimming,
+                                        videos = recordedVideos,
+                                        onBackClick = {
+                                            currentScreen = if (selectedVideoForTrimming == null) {
+                                                ScreenState.HOME
+                                            } else {
+                                                ScreenState.GALLERY
+                                            }
+                                        },
+                                        onTrimSuccess = {
+                                            refreshVideos()
+                                            // Return to wherever the user came from
+                                            currentScreen = if (selectedVideoForTrimming == null) {
+                                                ScreenState.HOME
+                                            } else {
+                                                ScreenState.GALLERY
+                                            }
                                         }
-                                    },
-                                    onTrimSuccess = {
-                                        refreshVideos()
-                                        // Return to wherever the user came from
-                                        currentScreen = if (selectedVideoForTrimming == null) {
-                                            ScreenState.HOME
-                                        } else {
-                                            ScreenState.GALLERY
-                                        }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }

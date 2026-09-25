@@ -198,85 +198,75 @@ fun SettingsScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Settings",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.4).sp,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = "ScreenX Preferences & Controls",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(
-                            imageVector = Lucide.ArrowLeft,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        // Top Header matching HomeScreen spacing
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BouncyIconButton(onClick = onBackClick) {
+                Icon(
+                    imageVector = Lucide.ArrowLeft,
+                    contentDescription = "Back",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(24.dp)
                 )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Settings",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                letterSpacing = (-0.5).sp
             )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 20.dp)
-                .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            item { Spacer(modifier = Modifier.height(4.dp)) }
-
             // 1. STORAGE & SAFETY
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("STORAGE & SAFETY")
                     OrionStackedGroupCard {
                         OrionSettingsSwitchItem(
                             icon = Lucide.HardDrive,
                             title = "Safe Storage Auto-Stop",
-                            subtitle = "Automatically stop & finalize recording before storage runs out",
+                            subtitle = "Stops capture automatically before storage runs out",
                             checked = safeStorageStop,
                             onCheckedChange = { coroutineScope.launch { settingsManager.setSafeStorageStop(it) } }
                         )
                         OrionSettingsDivider()
                         OrionSettingsValueItem(
                             icon = Lucide.HardDrive,
-                            title = "Safe Stop Threshold",
-                            subtitle = "Buffer space to ensure recordings finalize without corruption",
+                            title = "Safe Stop Buffer",
+                            subtitle = "Storage buffer to ensure clean file finalization",
                             value = "$safeStorageThresholdMb MB",
                             onClick = { showStorageThresholdDialog = true }
                         )
                         OrionSettingsDivider()
                         OrionSettingsInfoItem(
                             icon = Lucide.HardDrive,
-                            title = "Internal Storage Status",
-                            subtitle = "$freeSpaceGB GB available • Safe auto-stop ${if (safeStorageStop) "active" else "disabled"}",
+                            title = "Internal Storage",
+                            subtitle = "$freeSpaceGB GB free • ${if (safeStorageStop) "Safe stop active" else "Safe stop off"}",
                             badge = "$usedPercent% Used"
                         )
                         OrionSettingsDivider()
                         OrionSettingsValueItem(
                             icon = Lucide.Film,
-                            title = "Save Destination",
-                            subtitle = "Shared system storage directory",
-                            value = "Movies/ScreenX",
+                            title = "Save Location",
+                            subtitle = "Shared system Movies/ScreenX directory",
+                            value = "Movies",
                             showChevron = false,
                             onClick = {
                                 Toast.makeText(context, "Location locked to standard Movies/ScreenX", Toast.LENGTH_SHORT).show()
@@ -288,13 +278,13 @@ fun SettingsScreen(
 
             // 2. VIDEO CAPTURE
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("VIDEO CAPTURE")
                     OrionStackedGroupCard {
                         OrionSettingsValueItem(
                             icon = Lucide.Video,
                             title = "Resolution",
-                            subtitle = "Screen capture output resolution",
+                            subtitle = "Screen capture video resolution",
                             value = resolution,
                             onClick = { showResDialog = true }
                         )
@@ -302,7 +292,7 @@ fun SettingsScreen(
                         OrionSettingsValueItem(
                             icon = Lucide.CirclePlay,
                             title = "Frame Rate",
-                            subtitle = "Frames per second fluidity",
+                            subtitle = "Frames per second motion rate",
                             value = "$fps FPS",
                             onClick = { showFpsDialog = true }
                         )
@@ -310,7 +300,7 @@ fun SettingsScreen(
                         OrionSettingsValueItem(
                             icon = Lucide.Film,
                             title = "Video Bitrate",
-                            subtitle = "Encoding bitrate for video quality",
+                            subtitle = "Video encoding bitrate and quality",
                             value = "${bitrate / 1000000} Mbps",
                             onClick = { showBitrateDialog = true }
                         )
@@ -321,7 +311,7 @@ fun SettingsScreen(
                                 "Portrait" -> Lucide.Smartphone
                                 else -> Lucide.Tablet
                             },
-                            title = "Capture Orientation",
+                            title = "Orientation",
                             subtitle = "Screen orientation lock or match",
                             value = orientation,
                             onClick = {
@@ -339,28 +329,28 @@ fun SettingsScreen(
 
             // 3. AUDIO
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("AUDIO SOURCE")
                     OrionStackedGroupCard {
                         val audioSubtitle = if (isAdbRecordingDefault) {
-                            "Locked to No Audio — Stealth screen recording does not support sound capture"
+                            "Locked to No Audio during Stealth recording"
                         } else {
                             when (audioSource) {
-                                "Mic" -> "Microphone capture for voice & ambient sound"
-                                "System" -> "Internal phone audio only (media, games & apps)"
-                                "MicSystem" -> "Microphone + internal phone audio mixed together"
-                                "None" -> "No audio — video only, no sound recorded"
-                                else -> "Microphone capture for voice & ambient sound"
+                                "Mic" -> "Microphone voice capture"
+                                "System" -> "Internal device audio"
+                                "MicSystem" -> "Mic and internal audio"
+                                "None" -> "Muted audio track"
+                                else -> "Microphone voice capture"
                             }
                         }
                         val audioDisplay = if (isAdbRecordingDefault) {
-                            "No Audio (Locked)"
+                            "No Audio"
                         } else {
                             when (audioSource) {
                                 "Mic" -> "Microphone"
-                                "System" -> "Internal Audio"
-                                "MicSystem" -> "Mic + Internal Audio"
-                                "None" -> "No Audio"
+                                "System" -> "Internal"
+                                "MicSystem" -> "Mic + Internal"
+                                "None" -> "Muted"
                                 else -> "Microphone"
                             }
                         }
@@ -397,21 +387,21 @@ fun SettingsScreen(
 
             // 4. RECORDING CONTROLS
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("RECORDING CONTROLS")
                     OrionStackedGroupCard {
                         OrionSettingsValueItem(
                             icon = Lucide.RotateCcw,
                             title = "Start Countdown",
-                            subtitle = "Countdown timer before screen capture begins",
-                            value = if (countdown == 0) "Disabled" else "${countdown}s",
+                            subtitle = "Delay timer before capture begins",
+                            value = if (countdown == 0) "Off" else "${countdown}s",
                             onClick = { showCountdownDialog = true }
                         )
                         OrionSettingsDivider()
                         OrionSettingsSwitchItem(
                             icon = Lucide.Smartphone,
                             title = "Shake to Stop",
-                            subtitle = "Shake phone firmly to stop and finalize recording",
+                            subtitle = "Shake phone firmly to end recording",
                             checked = shakeToStop,
                             onCheckedChange = { coroutineScope.launch { settingsManager.setShakeToStop(it) } }
                         )
@@ -419,12 +409,12 @@ fun SettingsScreen(
                         val floatingBallSummary = when {
                             !showFloating -> "Hidden"
                             floatingShowMode.startsWith("All the time") -> "Always Active"
-                            else -> "While Recording"
+                            else -> "Recording"
                         }
                         OrionSettingsValueItem(
                             icon = Lucide.CircleDot,
-                            title = "Floating Control Ball",
-                            subtitle = "Overlay controls for pause, draw, screenshot & stop",
+                            title = "Floating Controls",
+                            subtitle = "On-screen quick controls overlay",
                             value = floatingBallSummary,
                             onClick = { showFloatingShowModeDialog = true }
                         )
@@ -434,20 +424,20 @@ fun SettingsScreen(
 
             // 5. APPEARANCE & THEME
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("APPEARANCE & THEME")
                     OrionStackedGroupCard {
                         val themeSummary = when (themeMode) {
                             "dark" -> "Dark Mode"
                             "light" -> "Light Mode"
                             "system" -> "System Default"
-                            "dynamic" -> "Dynamic Wallpaper"
+                            "dynamic" -> "Dynamic"
                             else -> "System Default"
                         }
                         OrionSettingsValueItem(
                             icon = Lucide.Camera,
                             title = "Theme Mode",
-                            subtitle = "Material You dynamic colors & tinting",
+                            subtitle = "Dark, light, or system default",
                             value = themeSummary,
                             onClick = { showThemeDialog = true }
                         )
@@ -457,60 +447,53 @@ fun SettingsScreen(
 
             // 6. ADB STEALTH RECORDING
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("STEALTH RECORDING")
                     OrionStackedGroupCard {
-                        // Merged ADB Switch: turning ON triggers info dialog first
                         OrionSettingsSwitchItem(
                             icon = Lucide.Zap,
-                            title = "Enable Stealth Recording",
-                            subtitle = "Undetectable background capture for apps with record protection (Snapchat, Instagram, banking)",
+                            title = "Stealth Recording",
+                            subtitle = "Undetectable background capture for protected apps",
                             checked = adbEnabled,
                             onCheckedChange = { willEnable ->
                                 if (willEnable) {
-                                    // Show info dialog FIRST; user confirms with OK to enable
                                     showAdbConfirmEnableDialog = true
                                 } else {
                                     coroutineScope.launch { settingsManager.setAdbEnabled(false) }
                                 }
                             },
-                            iconTint = if (adbEnabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            iconBackground = if (adbEnabled) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant
+                            iconTint = if (adbEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            iconBackground = MaterialTheme.colorScheme.surfaceVariant
                         )
 
-                        // ONLY show Pairing and Mode options when ADB is switched ON
                         if (adbEnabled) {
                             OrionSettingsDivider()
-                            // Wireless ADB Pairing Row
                             OrionSettingsValueItem(
                                 icon = Lucide.Usb,
-                                title = "Wireless Stealth Pairing",
+                                title = "Wireless ADB Pairing",
                                 subtitle = if (adbPaired)
-                                    "Paired — Stealth recording ready to use"
+                                    "Device paired and ready for stealth capture"
                                 else
-                                    "Not paired — tap to set up one-time pairing",
-                                value = if (adbPaired) "✓ Paired" else "Set Up",
+                                    "Pair device via wireless debugging",
+                                value = if (adbPaired) "Paired" else "Set Up",
                                 iconTint = if (adbPaired)
                                     EmeraldAccent
                                 else
-                                    MaterialTheme.colorScheme.primary,
-                                iconBackground = if (adbPaired)
-                                    EmeraldAccent.copy(alpha = 0.15f)
-                                else
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                                    MaterialTheme.colorScheme.onSurface,
+                                iconBackground = MaterialTheme.colorScheme.surfaceVariant,
                                 onClick = { showAdbPairingDialog = true }
                             )
 
                             OrionSettingsDivider()
                             val adbModeDisplay = when (adbCaptureMode) {
-                                "adb" -> "Stealth Only"
-                                "ask" -> "Ask Every Time"
-                                else -> "MediaProjection (Default)"
+                                "adb" -> "Stealth"
+                                "ask" -> "Prompt"
+                                else -> "Standard"
                             }
                             OrionSettingsValueItem(
                                 icon = Lucide.Settings,
-                                title = "Default Recording Mode",
-                                subtitle = "Engine triggered by the standard Record button",
+                                title = "Default Engine",
+                                subtitle = "Engine used by standard record button",
                                 value = adbModeDisplay,
                                 onClick = { showAdbModeDialog = true }
                             )
@@ -518,8 +501,8 @@ fun SettingsScreen(
                             OrionSettingsDivider()
                             OrionSettingsInfoItem(
                                 icon = Lucide.Info,
-                                title = "Stealth Recording Info & Limitations",
-                                subtitle = "No audio capture, 3-min auto-stop per session. Tap to review full details.",
+                                title = "Stealth Details & Rules",
+                                subtitle = "Tap to view stealth limitations",
                                 badge = "Stealth",
                                 onClick = { showAdbLimitationsDialog = true }
                             )
@@ -530,21 +513,21 @@ fun SettingsScreen(
 
             // 7. ABOUT SCREENX
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OrionSectionHeader("ABOUT SCREENX")
                     OrionStackedGroupCard {
                         OrionSettingsInfoItem(
                             icon = Lucide.Settings,
                             title = "ScreenX Recorder",
-                            subtitle = "Version 1.2.0 • Material You Edition",
+                            subtitle = "Version 1.2.0 • Pro Screen Capture",
                             badge = "v1.2.0"
                         )
                         OrionSettingsDivider()
                         val maxFps = DeviceCapabilitiesHelper.getMaxSupportedFps(context)
                         OrionSettingsInfoItem(
                             icon = Lucide.CirclePlay,
-                            title = "Hardware Display Refresh",
-                            subtitle = "Display panel supports up to $maxFps Hz refresh rate",
+                            title = "Display Refresh Rate",
+                            subtitle = "Panel supports up to $maxFps Hz",
                             badge = "$maxFps Hz"
                         )
                     }
@@ -552,7 +535,7 @@ fun SettingsScreen(
             }
 
             item {
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
