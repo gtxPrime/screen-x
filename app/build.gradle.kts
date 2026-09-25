@@ -73,6 +73,14 @@ dependencies {
     // Jetpack DataStore for Settings
     implementation("androidx.datastore:datastore-preferences:1.2.1")
 
+    // dadb — ADB over TCP for wireless ADB screen recording
+    // LibADB Android — full SPAKE2+ pairing + TLS-based wireless ADB (same as anyapk)
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.0")
+    // Conscrypt — required for SPAKE2+ key derivation from TLS exporter on Android 11+
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
+    // sun-security-android — X.509 cert generation for the ADB key
+    implementation("com.github.MuntashirAkon:sun-security-android:1.1")
+
     // Media3 (ExoPlayer) for in-app video playing
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
