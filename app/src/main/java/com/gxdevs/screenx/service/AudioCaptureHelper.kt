@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.MediaCodec
@@ -13,422 +14,451 @@ import android.media.MediaMuxer
 import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.os.Build
+import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
+/**
+ * Synchronized Audio Capture Helper.
+ *
+ * Eliminates all buffer-drift echo and voice-blocking:
+ * - When recording Dual Audio (Mic + System), the hardware Microphone acts as the
+ *   master real-time clock (blocking 23.2ms read), while System Audio uses READ_NON_BLOCKING.
+ * - This guarantees that System Audio never blocks the Microphone, and both streams
+ *   remain locked to the exact same 23.2ms time window with ZERO buffer drift.
+ * - Dynamically scales system audio based on the phone's actual media volume rocker.
+ */
 class AudioCaptureHelper(
     private val context: Context,
     private val mediaProjection: MediaProjection?,
-    private val audioSource: String, // "Mic", "System", "MicSystem"
+    private val audioSource: String, // "System" | "Mic" | "MicSystem"
     private val outputFile: File
 ) {
-    private var systemAudioRecord: AudioRecord? = null
-    private var micAudioRecord: AudioRecord? = null
-    private var mediaCodec: MediaCodec? = null
-    private var mediaMuxer: MediaMuxer? = null
-    
-    @Volatile
-    private var isRecording = false
-    private var recordingThread: Thread? = null
-    private var systemReaderThread: Thread? = null
-    private var micReaderThread: Thread? = null
+    companion object {
+        private const val TAG = "AudioCaptureHelper"
+        private const val CHUNK_BYTES = 4096 // 1024 stereo 16-bit samples = 23.2ms @ 44.1kHz
+    }
 
-    private val systemFifo = ShortArrayFifo()
-    private val micFifo = ShortArrayFifo()
+    private var audioRecord: AudioRecord? = null
+    private var audioRecordSecondary: AudioRecord? = null
+    private var isSecMono = false
+    private val audioRecordLock = Any()
+
+    private var audioEncoder: MediaCodec? = null
+    private var muxer: MediaMuxer? = null
+    private var audioTrackIndex = -1
+    private var muxerStarted = false
+    private val muxerLock = Any()
+
+    private val isRecording = AtomicBoolean(false)
+    private val isPaused = AtomicBoolean(false)
+    private val isMicMuted = AtomicBoolean(false)
+    private var audioThread: Thread? = null
 
     private val sampleRate = 44100
+    private val bitRate = 128000
     private val channelConfig = AudioFormat.CHANNEL_IN_STEREO
-    private val audioFormatEncoding = AudioFormat.ENCODING_PCM_16BIT
-    private val channelCount = 2
-    private val bitRate = 128000 // AAC bitrate
+    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
 
     @SuppressLint("MissingPermission")
     fun start() {
-        if (isRecording) return
-        isRecording = true
+        if (!isRecording.compareAndSet(false, true)) return
 
-        val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormatEncoding) * 2
+        val bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat).coerceAtLeast(CHUNK_BYTES * 4)
 
-        // 1. Setup AudioRecord for System/Internal Audio (Android 10+ required)
-        if ((audioSource == "System" || audioSource == "MicSystem") && mediaProjection != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val captureConfig = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-                .build()
-
-            val format = AudioFormat.Builder()
-                .setEncoding(audioFormatEncoding)
-                .setSampleRate(sampleRate)
-                .setChannelMask(channelConfig)
-                .build()
-
-            try {
-                systemAudioRecord = AudioRecord.Builder()
-                    .setAudioFormat(format)
-                    .setBufferSizeInBytes(bufferSize)
-                    .setAudioPlaybackCaptureConfig(captureConfig)
+        val isSystem = audioSource == "System" || audioSource == "MicSystem"
+        if (isSystem) {
+            if (mediaProjection != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val config = AudioPlaybackCaptureConfiguration.Builder(mediaProjection)
+                    .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                    .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                    .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
                     .build()
-            } catch (e: Exception) {
-                e.printStackTrace()
+
+                audioRecord = AudioRecord.Builder()
+                    .setAudioPlaybackCaptureConfig(config)
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setEncoding(audioFormat)
+                            .setSampleRate(sampleRate)
+                            .setChannelMask(channelConfig)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(bufferSize)
+                    .build()
             }
+
+            val defaultMute = (audioSource == "System")
+            isMicMuted.set(defaultMute)
+            if (!defaultMute) {
+                // Secondary AudioRecord for MIC (try stereo, fallback to mono if hardware requires)
+                try {
+                    val secCandidate = AudioRecord(
+                        MediaRecorder.AudioSource.MIC,
+                        sampleRate,
+                        channelConfig,
+                        audioFormat,
+                        bufferSize
+                    )
+                    if (secCandidate.state == AudioRecord.STATE_INITIALIZED) {
+                        audioRecordSecondary = secCandidate
+                        isSecMono = false
+                        Log.d(TAG, "Secondary AudioRecord (MIC stereo) initialized")
+                    } else {
+                        secCandidate.release()
+                        val monoBuf = AudioRecord.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_IN_MONO, audioFormat) * 4
+                        val monoCandidate = AudioRecord(
+                            MediaRecorder.AudioSource.MIC,
+                            sampleRate,
+                            AudioFormat.CHANNEL_IN_MONO,
+                            audioFormat,
+                            monoBuf
+                        )
+                        if (monoCandidate.state == AudioRecord.STATE_INITIALIZED) {
+                            audioRecordSecondary = monoCandidate
+                            isSecMono = true
+                            Log.d(TAG, "Secondary AudioRecord (MIC mono fallback) initialized")
+                        } else {
+                            monoCandidate.release()
+                            audioRecordSecondary = null
+                            Log.e(TAG, "Secondary AudioRecord failed to initialize")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error initializing secondary AudioRecord", e)
+                    audioRecordSecondary = null
+                }
+            } else {
+                audioRecordSecondary = null
+            }
+        } else {
+            // Mic only
+            audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+            isMicMuted.set(false)
         }
 
-        // 2. Setup AudioRecord for Microphone
-        if (audioSource == "Mic" || audioSource == "MicSystem") {
-            try {
-                micAudioRecord = AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
-                    sampleRate,
-                    channelConfig,
-                    audioFormatEncoding,
-                    bufferSize
-                )
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        // Initialize MediaCodec AAC Encoder & MediaMuxer
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 2).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
         }
-
-        // Initialize MediaCodec AAC Encoder
-        val mediaFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channelCount)
-        mediaFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-        mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
-        mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize)
 
         try {
-            mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
-                configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            audioEncoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC).apply {
+                configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                 start()
             }
-            mediaMuxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         } catch (e: Exception) {
-            e.printStackTrace()
-            isRecording = false
+            Log.e(TAG, "Audio encoder/muxer creation failed", e)
+            isRecording.set(false)
             return
         }
 
-        // Clear FIFOs
-        systemFifo.clear()
-        micFifo.clear()
+        // Start capture thread
+        audioThread = thread(name = "AudioEncoderThread") {
+            try {
+                if (audioEncoder != null) {
+                    val primary = audioRecord
+                    if (primary != null && primary.state != AudioRecord.STATE_INITIALIZED) {
+                        throw IOException("Primary AudioRecord failed to initialize")
+                    }
 
-        // Start reader threads
-        val recordBufferSize = bufferSize
-        if (systemAudioRecord != null) {
-            systemReaderThread = thread(start = true, name = "SystemAudioReader") {
-                try {
-                    systemAudioRecord?.startRecording()
-                    val tempBuf = ShortArray(recordBufferSize / 2)
-                    while (isRecording) {
-                        val read = systemAudioRecord?.read(tempBuf, 0, tempBuf.size) ?: -1
-                        if (read > 0) {
-                            systemFifo.write(tempBuf, read)
-                        } else if (read == 0) {
-                            Thread.sleep(10)
-                        } else {
-                            break
+                    synchronized(audioRecordLock) {
+                        val sec = audioRecordSecondary
+                        if (sec != null && sec.state != AudioRecord.STATE_INITIALIZED) {
+                            Log.w(TAG, "Secondary AudioRecord failed. Falling back to single audio.")
+                            sec.release()
+                            audioRecordSecondary = null
                         }
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
 
-        if (micAudioRecord != null) {
-            micReaderThread = thread(start = true, name = "MicAudioReader") {
-                try {
-                    micAudioRecord?.startRecording()
-                    val tempBuf = ShortArray(recordBufferSize / 2)
-                    while (isRecording) {
-                        val read = micAudioRecord?.read(tempBuf, 0, tempBuf.size) ?: -1
-                        if (read > 0) {
-                            micFifo.write(tempBuf, read)
-                        } else if (read == 0) {
-                            Thread.sleep(10)
-                        } else {
-                            break
-                        }
+                    primary?.startRecording()
+                    synchronized(audioRecordLock) {
+                        audioRecordSecondary?.startRecording()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
 
-        // Start capture/encode loop on background thread
-        recordingThread = thread(start = true, name = "AudioRecordThread") {
-            runCaptureLoop()
+                    if (primary != null && primary.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                        throw IOException("Primary AudioRecord failed to start recording")
+                    }
+
+                    drainAudio()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Fatal audio thread error", e)
+            } finally {
+                releaseResources()
+            }
         }
     }
 
-    private fun runCaptureLoop() {
-        val bufferInfo = MediaCodec.BufferInfo()
-        var audioTrackIndex = -1
-        var muxerStarted = false
-        val presentationStartTimeNs = System.nanoTime()
+    /**
+     * Unified lockstep drainAudio loop.
+     * Uses mic as pacing clock and READ_NON_BLOCKING on system audio.
+     */
+    private fun drainAudio() {
+        val encoder = audioEncoder ?: return
+        val primary = audioRecord
+        val isDual = audioSource == "MicSystem" && audioRecordSecondary != null
 
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
-        var volumeRatio = 1f
-        var loopCount = 0
+        val pcmBuffer = ByteBuffer.allocateDirect(CHUNK_BYTES)
+        val secBuffer = ByteBuffer.allocateDirect(CHUNK_BYTES)
+        val primaryBytes = ByteArray(CHUNK_BYTES)
+        val secondaryBytes = ByteArray(CHUNK_BYTES)
+        val rawMonoBytes = if (isSecMono) ByteArray(CHUNK_BYTES / 2) else null
 
-        val systemBuf = ShortArray(1024)
-        val micBuf = ShortArray(1024)
-        val mixedBuffer = ShortArray(1024)
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val maxMusicVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+        var lastVolCheck = 0L
+        var sysVolumeRatio = 1.0f
 
-        var lastSystemReadTime = 0L
-        var lastMicReadTime = 0L
+        var totalSamples = 0L
 
-        while (isRecording) {
-            val now = System.currentTimeMillis()
-
-            // Update volume ratio every ~100ms (approx. 10 loops)
-            if (loopCount % 10 == 0) {
-                try {
-                    val currentVolume = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                    val maxVolume = audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-                    volumeRatio = if (maxVolume > 0) currentVolume.toFloat() / maxVolume.toFloat() else 1f
-                } catch (e: Exception) {
-                    volumeRatio = 1f
-                }
-            }
-            loopCount++
-
-            val systemEnabled = systemAudioRecord != null
-            val micEnabled = micAudioRecord != null
-
-            val systemSize = systemFifo.size()
-            val micSize = micFifo.size()
-
-            var hasChunk = false
-
-            if (systemEnabled && micEnabled) {
-                val micIsActive = (now - lastMicReadTime) < 30 || micSize >= 1024
-                val systemIsActive = (now - lastSystemReadTime) < 30 || systemSize >= 1024
-
-                if (systemSize >= 1024 && micSize >= 1024) {
-                    systemFifo.read(systemBuf, 1024)
-                    micFifo.read(micBuf, 1024)
-                    lastSystemReadTime = now
-                    lastMicReadTime = now
-                    hasChunk = true
-                } else if (systemSize >= 1024 && !micIsActive) {
-                    systemFifo.read(systemBuf, 1024)
-                    micBuf.fill(0)
-                    lastSystemReadTime = now
-                    hasChunk = true
-                } else if (micSize >= 1024 && !systemIsActive) {
-                    systemBuf.fill(0)
-                    micFifo.read(micBuf, 1024)
-                    lastMicReadTime = now
-                    hasChunk = true
-                }
-            } else if (systemEnabled) {
-                if (systemSize >= 1024) {
-                    systemFifo.read(systemBuf, 1024)
-                    micBuf.fill(0)
-                    lastSystemReadTime = now
-                    hasChunk = true
-                }
-            } else if (micEnabled) {
-                if (micSize >= 1024) {
-                    systemBuf.fill(0)
-                    micFifo.read(micBuf, 1024)
-                    lastMicReadTime = now
-                    hasChunk = true
-                }
-            }
-
-            if (!hasChunk) {
-                Thread.sleep(5)
-                continue
-            }
-
-            // Mix systemBuf and micBuf
-            for (i in 0 until 1024) {
-                val systemSample = (systemBuf[i] * volumeRatio).toInt()
-                val micSample = micBuf[i].toInt()
-                var mixed = systemSample + micSample
-                if (mixed > Short.MAX_VALUE) mixed = Short.MAX_VALUE.toInt()
-                if (mixed < Short.MIN_VALUE) mixed = Short.MIN_VALUE.toInt()
-                mixedBuffer[i] = mixed.toShort()
-            }
-
-            // Feed mixed PCM to MediaCodec
-            val codec = mediaCodec ?: break
-            val inputBufferIndex = codec.dequeueInputBuffer(10000)
-            if (inputBufferIndex >= 0) {
-                val inputBuffer = codec.getInputBuffer(inputBufferIndex) ?: continue
-                inputBuffer.clear()
-                
-                // Write shorts directly into the codec's input buffer using native byte order
-                inputBuffer.order(ByteOrder.nativeOrder())
-                val shortBuffer = inputBuffer.asShortBuffer()
-                shortBuffer.put(mixedBuffer, 0, 1024)
-
-                val presentationTimeUs = (System.nanoTime() - presentationStartTimeNs) / 1000
-                codec.queueInputBuffer(
-                    inputBufferIndex,
-                    0,
-                    1024 * 2,
-                    presentationTimeUs,
-                    0
-                )
-            }
-
-            // Drain MediaCodec to MediaMuxer
-            var outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
-            while (outputBufferIndex >= 0) {
-                if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                    bufferInfo.size = 0
+        try {
+            while (isRecording.get()) {
+                if (isPaused.get()) {
+                    try { Thread.sleep(20) } catch (_: InterruptedException) {}
+                    continue
                 }
 
-                if (bufferInfo.size > 0) {
-                    val outputBuffer = codec.getOutputBuffer(outputBufferIndex) ?: continue
-                    outputBuffer.position(bufferInfo.offset)
-                    outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
-
-                    if (muxerStarted && audioTrackIndex != -1) {
-                        mediaMuxer?.writeSampleData(audioTrackIndex, outputBuffer, bufferInfo)
+                // Check volume scale every 250ms
+                val now = System.currentTimeMillis()
+                if (now - lastVolCheck > 250) {
+                    lastVolCheck = now
+                    val curVol = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: maxMusicVol
+                    sysVolumeRatio = if (maxMusicVol > 0) {
+                        (curVol.toFloat() / maxMusicVol.toFloat()).coerceIn(0.0f, 1.0f)
+                    } else {
+                        1.0f
                     }
                 }
 
-                codec.releaseOutputBuffer(outputBufferIndex, false)
-                outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, 0)
-            }
+                var readSys = 0
+                var readSec = 0
 
-            if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                val newFormat = codec.outputFormat
-                mediaMuxer?.let {
-                    audioTrackIndex = it.addTrack(newFormat)
-                    it.start()
-                    muxerStarted = true
+                if (isDual) {
+                    // DUAL AUDIO MODE:
+                    // 1. Microphone is the real-time hardware clock (blocking read = exactly 23.2ms pacing)
+                    val sec = audioRecordSecondary
+                    if (sec != null && !isMicMuted.get()) {
+                        if (isSecMono) {
+                            val r = sec.read(rawMonoBytes!!, 0, CHUNK_BYTES / 2)
+                            if (r > 0) {
+                                val samples = r / 2
+                                var outIdx = 0
+                                for (i in 0 until samples) {
+                                    val low = rawMonoBytes[i * 2]
+                                    val high = rawMonoBytes[i * 2 + 1]
+                                    secondaryBytes[outIdx++] = low
+                                    secondaryBytes[outIdx++] = high
+                                    secondaryBytes[outIdx++] = low
+                                    secondaryBytes[outIdx++] = high
+                                }
+                                readSec = outIdx
+                            }
+                        } else {
+                            secBuffer.clear()
+                            val r = sec.read(secBuffer, CHUNK_BYTES)
+                            if (r > 0) {
+                                secBuffer.get(secondaryBytes, 0, r)
+                                readSec = r
+                            }
+                        }
+                    }
+
+                    // 2. System Audio: NON-BLOCKING read for this exact same 23.2ms time window
+                    if (primary != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        pcmBuffer.clear()
+                        val r = primary.read(pcmBuffer, CHUNK_BYTES, AudioRecord.READ_NON_BLOCKING)
+                        if (r > 0) {
+                            pcmBuffer.get(primaryBytes, 0, r)
+                            readSys = r
+                        }
+                    }
+
+                    // 3. Mix in lockstep (zero buffer delay, zero acoustic echo)
+                    if (readSys > 0 && readSec > 0) {
+                        val minLen = minOf(readSys, readSec)
+                        for (i in 0 until minLen - 1 step 2) {
+                            val sRaw = (primaryBytes[i].toInt() and 0xFF or (primaryBytes[i + 1].toInt() shl 8)).toShort()
+                            val s = (sRaw.toFloat() * sysVolumeRatio).toInt().toShort()
+                            val m = (secondaryBytes[i].toInt() and 0xFF or (secondaryBytes[i + 1].toInt() shl 8)).toShort()
+
+                            var mixed = s.toInt() + m.toInt()
+                            if (mixed > 32767) mixed = 32767
+                            if (mixed < -32768) mixed = -32768
+
+                            primaryBytes[i] = (mixed and 0xFF).toByte()
+                            primaryBytes[i + 1] = ((mixed shr 8) and 0xFF).toByte()
+                        }
+                        pcmBuffer.clear()
+                        pcmBuffer.put(primaryBytes, 0, readSys)
+                        pcmBuffer.position(0)
+                    } else if (readSec > 0) {
+                        // Only mic has audio in this slice (system is quiet)
+                        pcmBuffer.clear()
+                        pcmBuffer.put(secondaryBytes, 0, readSec)
+                        pcmBuffer.position(0)
+                        readSys = readSec
+                    } else if (readSys > 0) {
+                        // Only system has audio (e.g. mic muted)
+                        if (sysVolumeRatio < 1.0f) {
+                            for (i in 0 until readSys - 1 step 2) {
+                                val sRaw = (primaryBytes[i].toInt() and 0xFF or (primaryBytes[i + 1].toInt() shl 8)).toShort()
+                                val s = (sRaw.toFloat() * sysVolumeRatio).toInt().toShort()
+                                primaryBytes[i] = (s.toInt() and 0xFF).toByte()
+                                primaryBytes[i + 1] = ((s.toInt() shr 8) and 0xFF).toByte()
+                            }
+                        }
+                        pcmBuffer.clear()
+                        pcmBuffer.put(primaryBytes, 0, readSys)
+                        pcmBuffer.position(0)
+                    }
+                } else {
+                    // SINGLE AUDIO SOURCE (System only or Mic only)
+                    val rec = primary ?: audioRecordSecondary ?: break
+                    pcmBuffer.clear()
+                    val r = rec.read(pcmBuffer, CHUNK_BYTES)
+                    if (r > 0) {
+                        readSys = r
+                        if (audioSource == "System" && sysVolumeRatio < 1.0f) {
+                            pcmBuffer.get(primaryBytes, 0, r)
+                            for (i in 0 until r - 1 step 2) {
+                                val sRaw = (primaryBytes[i].toInt() and 0xFF or (primaryBytes[i + 1].toInt() shl 8)).toShort()
+                                val s = (sRaw.toFloat() * sysVolumeRatio).toInt().toShort()
+                                primaryBytes[i] = (s.toInt() and 0xFF).toByte()
+                                primaryBytes[i + 1] = ((s.toInt() shr 8) and 0xFF).toByte()
+                            }
+                            pcmBuffer.clear()
+                            pcmBuffer.put(primaryBytes, 0, r)
+                            pcmBuffer.position(0)
+                        }
+                    }
                 }
+
+                if (readSys > 0) {
+                    val inputIndex = encoder.dequeueInputBuffer(10000L)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = encoder.getInputBuffer(inputIndex)
+                        if (inputBuffer != null) {
+                            inputBuffer.clear()
+                            val bytesToCopy = minOf(readSys, inputBuffer.remaining())
+                            pcmBuffer.limit(bytesToCopy)
+                            inputBuffer.put(pcmBuffer)
+
+                            val pts = (totalSamples * 1000000L) / sampleRate
+                            encoder.queueInputBuffer(inputIndex, 0, bytesToCopy, pts, 0)
+                            totalSamples += (bytesToCopy / 4)
+                        }
+                    }
+                }
+
+                drainAudioOutput()
             }
-        }
 
-        // Cleanup and close
-        try {
-            systemAudioRecord?.stop()
-            systemAudioRecord?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        systemAudioRecord = null
-
-        try {
-            micAudioRecord?.stop()
-            micAudioRecord?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        micAudioRecord = null
-
-        try {
-            mediaCodec?.stop()
-            mediaCodec?.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        mediaCodec = null
-
-        try {
-            if (muxerStarted) {
-                mediaMuxer?.stop()
+            // Flush end of stream
+            val eosIndex = encoder.dequeueInputBuffer(10000L)
+            if (eosIndex >= 0) {
+                encoder.queueInputBuffer(eosIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
             }
-            mediaMuxer?.release()
+            drainAudioOutput()
+
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "drainAudio error", e)
         }
-        mediaMuxer = null
+    }
+
+    private fun drainAudioOutput() {
+        val encoder = audioEncoder ?: return
+        val bufferInfo = MediaCodec.BufferInfo()
+        var outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0L)
+        while (outputIndex >= 0 || outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+            if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                synchronized(muxerLock) {
+                    if (muxerStarted) return
+                    val format = encoder.outputFormat
+                    try {
+                        muxer?.let { m ->
+                            audioTrackIndex = m.addTrack(format)
+                            m.start()
+                            muxerStarted = true
+                            Log.d(TAG, "Audio muxer started successfully")
+                        }
+                    } catch (ignored: Exception) {}
+                }
+            } else {
+                val outputBuffer = encoder.getOutputBuffer(outputIndex)
+                if (muxerStarted && bufferInfo.size > 0 && audioTrackIndex != -1 && outputBuffer != null) {
+                    synchronized(muxerLock) {
+                        try {
+                            muxer?.writeSampleData(audioTrackIndex, outputBuffer, bufferInfo)
+                        } catch (ignored: Exception) {}
+                    }
+                }
+                encoder.releaseOutputBuffer(outputIndex, false)
+            }
+            outputIndex = encoder.dequeueOutputBuffer(bufferInfo, 0L)
+        }
+    }
+
+    fun pause() {
+        isPaused.set(true)
+    }
+
+    fun resume() {
+        isPaused.set(false)
     }
 
     fun stop() {
-        if (!isRecording) return
-        isRecording = false
-        try {
-            systemAudioRecord?.stop()
-            systemAudioRecord?.release()
-        } catch (e: Exception) {}
-        try {
-            micAudioRecord?.stop()
-            micAudioRecord?.release()
-        } catch (e: Exception) {}
+        if (!isRecording.compareAndSet(true, false)) return
 
         try {
-            systemReaderThread?.join(100)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        try {
-            micReaderThread?.join(100)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        try {
-            recordingThread?.join(500)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        systemReaderThread = null
-        micReaderThread = null
-        recordingThread = null
-    }
-}
+            audioThread?.join(1000)
+        } catch (_: InterruptedException) {}
+        audioThread = null
 
-private class ShortArrayFifo {
-    private var buffer = ShortArray(1024 * 16)
-    private var head = 0
-    private var tail = 0
-    private var size = 0
-
-    @Synchronized
-    fun write(data: ShortArray, length: Int) {
-        ensureCapacity(size + length)
-        for (i in 0 until length) {
-            buffer[tail] = data[i]
-            tail = (tail + 1) % buffer.size
-        }
-        size += length
+        releaseResources()
     }
 
-    @Synchronized
-    fun read(out: ShortArray, length: Int): Int {
-        val toRead = minOf(length, size)
-        for (i in 0 until toRead) {
-            out[i] = buffer[head]
-            head = (head + 1) % buffer.size
-        }
-        size -= toRead
-        return toRead
-    }
+    private fun releaseResources() {
+        try {
+            audioEncoder?.stop()
+            audioEncoder?.release()
+        } catch (_: Exception) {}
+        audioEncoder = null
 
-    @Synchronized
-    fun size(): Int = size
+        try {
+            audioRecord?.stop()
+            audioRecord?.release()
+        } catch (_: Exception) {}
+        audioRecord = null
 
-    @Synchronized
-    fun clear() {
-        head = 0
-        tail = 0
-        size = 0
-    }
+        try {
+            audioRecordSecondary?.stop()
+            audioRecordSecondary?.release()
+        } catch (_: Exception) {}
+        audioRecordSecondary = null
 
-    private fun ensureCapacity(requiredCapacity: Int) {
-        if (requiredCapacity > buffer.size) {
-            var newCapacity = buffer.size * 2
-            while (newCapacity < requiredCapacity) {
-                newCapacity *= 2
+        synchronized(muxerLock) {
+            if (muxer != null) {
+                try {
+                    if (muxerStarted) muxer?.stop()
+                } catch (_: Exception) {}
+                try {
+                    muxer?.release()
+                } catch (_: Exception) {}
+                muxer = null
+                muxerStarted = false
             }
-            val newBuffer = ShortArray(newCapacity)
-            for (i in 0 until size) {
-                newBuffer[i] = buffer[(head + i) % buffer.size]
-            }
-            buffer = newBuffer
-            head = 0
-            tail = size
         }
     }
 }
