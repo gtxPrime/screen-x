@@ -78,7 +78,6 @@ class TileHelperActivity : ComponentActivity() {
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
 
         if (ScreenRecordService.isRecording) {
-            // Already recording, stop it
             val serviceIntent = Intent(this, ScreenRecordService::class.java).apply {
                 action = ScreenRecordService.ACTION_STOP
             }
@@ -86,8 +85,49 @@ class TileHelperActivity : ComponentActivity() {
             finish()
             return
         }
+        if (AdbRecordService.isRecording) {
+            val serviceIntent = Intent(this, AdbRecordService::class.java).apply {
+                action = AdbRecordService.ACTION_STOP_ADB
+            }
+            startService(serviceIntent)
+            finish()
+            return
+        }
 
         lifecycleScope.launch {
+            val adbEnabled = settingsManager.adbEnabledFlow.first()
+            val captureMode = settingsManager.adbCaptureModeFlow.first()
+            if (adbEnabled && captureMode == "adb") {
+                val isAdbPaired = settingsManager.adbPairedFlow.first()
+                if (!isAdbPaired) {
+                    Toast.makeText(
+                        this@TileHelperActivity,
+                        "Wireless ADB is not paired. Please open ScreenX to pair.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    val appIntent = Intent(this@TileHelperActivity, com.gxdevs.screenx.MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    }
+                    startActivity(appIntent)
+                    finish()
+                    return@launch
+                }
+                val startIntent = Intent(this@TileHelperActivity, AdbRecordService::class.java).apply {
+                    action = AdbRecordService.ACTION_START_ADB
+                }
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(startIntent)
+                    } else {
+                        startService(startIntent)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("TileHelperActivity", "Failed to start AdbRecordService", e)
+                }
+                finish()
+                return@launch
+            }
+
             val showFloating = settingsManager.showFloatingFlow.first()
             if (showFloating && !Settings.canDrawOverlays(this@TileHelperActivity)) {
                 Toast.makeText(this@TileHelperActivity, "Please enable 'Display over other apps'", Toast.LENGTH_LONG).show()

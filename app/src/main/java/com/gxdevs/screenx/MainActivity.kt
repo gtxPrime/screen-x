@@ -24,11 +24,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import com.gxdevs.screenx.data.AdbManager
 import com.gxdevs.screenx.data.SettingsManager
+import com.gxdevs.screenx.service.AdbRecordService
 import com.gxdevs.screenx.service.ScreenRecordService
 import com.gxdevs.screenx.ui.screens.HomeScreen
 import com.gxdevs.screenx.ui.screens.GalleryScreen
 import com.gxdevs.screenx.ui.screens.VideoTrimmerScreen
+import com.gxdevs.screenx.ui.screens.SettingsScreen
 import com.gxdevs.screenx.ui.theme.ScreenXTheme
 import com.gxdevs.screenx.utils.RecordedVideo
 import com.gxdevs.screenx.utils.VideoHelper
@@ -39,7 +42,8 @@ import kotlinx.coroutines.launch
 enum class ScreenState {
     HOME,
     GALLERY,
-    TRIMMER
+    TRIMMER,
+    SETTINGS
 }
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +51,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** Set to true when launching from the Quick Settings tile to auto-start recording */
         const val EXTRA_START_RECORDING = "extra_start_recording"
+        const val EXTRA_OPEN_SETTINGS = "extra_open_settings"
     }
 
     private lateinit var settingsManager: SettingsManager
@@ -55,6 +60,7 @@ class MainActivity : ComponentActivity() {
     // State holders
     private val recordedVideos = mutableStateListOf<RecordedVideo>()
     private var isRecordingActive by mutableStateOf(false)
+    private var openSettingsTrigger by mutableStateOf(false)
 
     private val recordingSavedReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -121,11 +127,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
             ScreenXTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) {
-                var currentScreen by remember { mutableStateOf(ScreenState.HOME) }
+                var currentScreen by remember {
+                    mutableStateOf(
+                        if (intent?.getBooleanExtra(EXTRA_OPEN_SETTINGS, false) == true) ScreenState.SETTINGS
+                        else ScreenState.HOME
+                    )
+                }
                 var selectedVideoForTrimming by remember { mutableStateOf<RecordedVideo?>(null) }
+                
+                LaunchedEffect(openSettingsTrigger) {
+                    if (openSettingsTrigger) {
+                        currentScreen = ScreenState.SETTINGS
+                        openSettingsTrigger = false
+                    }
+                }
                 
                 androidx.activity.compose.BackHandler(enabled = currentScreen != ScreenState.HOME) {
                     when (currentScreen) {
+                        ScreenState.SETTINGS -> {
+                            currentScreen = ScreenState.HOME
+                        }
                         ScreenState.GALLERY -> {
                             currentScreen = ScreenState.HOME
                         }
@@ -167,6 +188,7 @@ class MainActivity : ComponentActivity() {
                                 HomeScreen(
                                     videos = recordedVideos,
                                     onStartRecordingClick = { handleRecordToggle() },
+                                    onAdbRecordClick = { handleAdbRecordToggle() },
                                     onDeleteVideo = { deleteVideoFile(it) },
                                     isRecordingActive = isRecordingActive,
                                     settingsManager = settingsManager,
@@ -175,7 +197,14 @@ class MainActivity : ComponentActivity() {
                                     onTrimVideoClick = {
                                         selectedVideoForTrimming = null
                                         currentScreen = ScreenState.TRIMMER
-                                    }
+                                    },
+                                    onSettingsClick = { currentScreen = ScreenState.SETTINGS }
+                                )
+                            }
+                            ScreenState.SETTINGS -> {
+                                SettingsScreen(
+                                    onBackClick = { currentScreen = ScreenState.HOME },
+                                    settingsManager = settingsManager
                                 )
                             }
                             ScreenState.GALLERY -> {
@@ -229,13 +258,15 @@ class MainActivity : ComponentActivity() {
             val showFloating = settingsManager.showFloatingFlow.first()
             val mode = settingsManager.floatingShowModeFlow.first()
             if (showFloating && mode.startsWith("All the time") && !ScreenRecordService.isRecording) {
-                val serviceIntent = Intent(this@MainActivity, ScreenRecordService::class.java).apply {
-                    action = ScreenRecordService.ACTION_START_FLOATING_ONLY
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(serviceIntent)
-                } else {
-                    startService(serviceIntent)
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || android.provider.Settings.canDrawOverlays(this@MainActivity)) {
+                    val serviceIntent = Intent(this@MainActivity, ScreenRecordService::class.java).apply {
+                        action = ScreenRecordService.ACTION_START_FLOATING_ONLY
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(serviceIntent)
+                    } else {
+                        startService(serviceIntent)
+                    }
                 }
             }
         }
@@ -245,6 +276,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleStartRecordingIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_SETTINGS, false)) {
+            intent.removeExtra(EXTRA_OPEN_SETTINGS)
+            openSettingsTrigger = true
+        }
     }
 
     private fun handleStartRecordingIntent(i: Intent?) {
@@ -393,6 +428,47 @@ class MainActivity : ComponentActivity() {
             action = ScreenRecordService.ACTION_SCREENSHOT
         }
         startService(serviceIntent)
+    }
+
+    /**
+     * Starts or stops ADB-mode screen recording via [AdbRecordService].
+     * The service connects to the wireless ADB daemon (127.0.0.1) and runs
+     * `screenrecord --time-limit 170`, which auto-stops after ~2m50s.
+     */
+    private fun handleAdbRecordToggle() {
+        if (AdbRecordService.isRecording) {
+            // Send stop — screenrecord receives SIGINT and finalises the MP4
+            val stopIntent = Intent(this, AdbRecordService::class.java).apply {
+                action = AdbRecordService.ACTION_STOP_ADB
+            }
+            startService(stopIntent)
+        } else {
+            lifecycleScope.launch {
+                val isPaired = settingsManager.adbPairedFlow.first()
+                if (!isPaired) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Wireless ADB is not paired. Please pair first.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+                // Launch the ADB recording service
+                try {
+                    val startIntent = Intent(this@MainActivity, AdbRecordService::class.java).apply {
+                        action = AdbRecordService.ACTION_START_ADB
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(startIntent)
+                    } else {
+                        startService(startIntent)
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Failed to start ADB recording service", e)
+                    Toast.makeText(this@MainActivity, "Could not start ADB recording: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
