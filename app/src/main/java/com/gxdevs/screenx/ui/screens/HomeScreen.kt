@@ -641,7 +641,7 @@ fun HomeScreen(
                                     .clip(CircleShape)
                                     .background(
                                         if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
-                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
                                     )
                             ) {
                                 Icon(
