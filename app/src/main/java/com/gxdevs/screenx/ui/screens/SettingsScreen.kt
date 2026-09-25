@@ -98,6 +98,7 @@ import com.gxdevs.screenx.data.SettingsManager
 import com.gxdevs.screenx.service.PairingInputService
 import com.gxdevs.screenx.utils.DeviceCapabilitiesHelper
 import com.gxdevs.screenx.utils.NetworkUtils
+import com.gxdevs.screenx.ui.theme.EmeraldAccent
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -490,11 +491,11 @@ fun SettingsScreen(
                                     "Not paired — tap to set up one-time pairing",
                                 value = if (adbPaired) "✓ Paired" else "Set Up",
                                 iconTint = if (adbPaired)
-                                    Color(0xFF2E9E5B)
+                                    EmeraldAccent
                                 else
                                     MaterialTheme.colorScheme.primary,
                                 iconBackground = if (adbPaired)
-                                    Color(0xFF2E9E5B).copy(alpha = 0.15f)
+                                    EmeraldAccent.copy(alpha = 0.15f)
                                 else
                                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                                 onClick = { showAdbPairingDialog = true }

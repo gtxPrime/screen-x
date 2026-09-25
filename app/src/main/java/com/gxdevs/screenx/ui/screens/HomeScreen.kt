@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import com.gxdevs.screenx.ui.theme.EmeraldAccent
 import android.util.Size
 import android.widget.Toast
 import androidx.compose.animation.core.Spring
@@ -314,7 +315,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(90.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
+                            .background(if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                             .bouncyClickable { onStartRecordingClick() }
                     ) {
                         Box(
@@ -435,7 +436,7 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val internalAudioBg = if (isInternalAudioSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                    val internalAudioText = if (isInternalAudioSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                    val internalAudioText = if (isInternalAudioSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                     
                     Surface(
                         shape = RoundedCornerShape(16.dp),
@@ -614,7 +615,7 @@ fun HomeScreen(
                     Card(
                         shape = RoundedCornerShape(28.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primary
+                            containerColor = if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -633,26 +634,30 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(44.dp)
                                     .clip(CircleShape)
-                                    .background(Color.White.copy(alpha = 0.2f))
+                                    .background(
+                                        if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                                    )
                             ) {
                                 Icon(
                                     imageVector = Lucide.CircleDot,
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
                             Column {
                                 Text(
                                     text = if (isRecordingActive) "Recording" else "Record",
-                                    color = Color.White,
+                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isRecordingActive) "Tap to stop" else "Tap to start",
-                                    color = Color.White.copy(alpha = 0.7f),
+                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.75f)
+                                           else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -1002,7 +1007,7 @@ fun HomeScreen(
                                         color = if (isAdbRecording)
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
                                         else if (adbPaired)
-                                            Color(0xFF2E9E5B).copy(alpha = 0.15f)
+                                            EmeraldAccent.copy(alpha = 0.15f)
                                         else
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
                                     ) {
@@ -1015,7 +1020,7 @@ fun HomeScreen(
                                             color = if (isAdbRecording)
                                                 MaterialTheme.colorScheme.error
                                             else if (adbPaired)
-                                                Color(0xFF2E9E5B)
+                                                EmeraldAccent
                                             else
                                                 MaterialTheme.colorScheme.error,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -2011,15 +2016,15 @@ fun AdbPairingDialog(
                             .clip(RoundedCornerShape(14.dp))
                             .background(
                                 if (AdbManager.isConnected)
-                                    Color(0xFF2E9E5B).copy(alpha = 0.18f)
+                                    EmeraldAccent.copy(alpha = 0.18f)
                                 else
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
                             )
                     ) {
                         Icon(
                             imageVector = if (AdbManager.isConnected) Lucide.Shield else Lucide.Usb,
                             contentDescription = null,
-                            tint = if (AdbManager.isConnected) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.primary,
+                            tint = if (AdbManager.isConnected) EmeraldAccent else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -2036,7 +2041,7 @@ fun AdbPairingDialog(
                             else if (isPaired) "Status: Paired (Needs Connect)"
                             else "One-time wireless pairing",
                             fontSize = 12.sp,
-                            color = if (AdbManager.isConnected) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (AdbManager.isConnected) EmeraldAccent else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -2358,8 +2363,8 @@ fun AdbPairingDialog(
                 if (successMsg.isNotEmpty()) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF2E9E5B).copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, Color(0xFF2E9E5B).copy(alpha = 0.3f)),
+                        color = EmeraldAccent.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, EmeraldAccent.copy(alpha = 0.3f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2370,12 +2375,12 @@ fun AdbPairingDialog(
                             Icon(
                                 Lucide.Shield,
                                 contentDescription = null,
-                                tint = Color(0xFF2E9E5B),
+                                tint = EmeraldAccent,
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
                                 successMsg,
-                                color = Color(0xFF2E9E5B),
+                                color = EmeraldAccent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2488,8 +2493,8 @@ fun AdbLimitationsDialog(
                 // Stealth badge
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF1A6B3C).copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, Color(0xFF2E9E5B).copy(alpha = 0.4f)),
+                    color = EmeraldAccent.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, EmeraldAccent.copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -2500,7 +2505,7 @@ fun AdbLimitationsDialog(
                         Icon(
                             imageVector = Lucide.Shield,
                             contentDescription = null,
-                            tint = Color(0xFF2E9E5B),
+                            tint = EmeraldAccent,
                             modifier = Modifier.size(20.dp)
                         )
                         Column {
@@ -2508,12 +2513,12 @@ fun AdbLimitationsDialog(
                                 text = "Fully Undetectable",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E9E5B)
+                                color = EmeraldAccent
                             )
                             Text(
                                 text = "Apps like Snapchat, Instagram, and banking apps cannot detect Stealth Recording — it bypasses their screenshot/screen-record detection entirely.",
                                 fontSize = 12.sp,
-                                color = Color(0xFF2E9E5B).copy(alpha = 0.85f),
+                                color = EmeraldAccent.copy(alpha = 0.9f),
                                 lineHeight = 17.sp
                             )
                         }
