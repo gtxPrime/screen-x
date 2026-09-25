@@ -615,7 +615,12 @@ fun HomeScreen(
                     Card(
                         shape = RoundedCornerShape(28.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            containerColor = if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isRecordingActive) MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -636,20 +641,20 @@ fun HomeScreen(
                                     .clip(CircleShape)
                                     .background(
                                         if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
-                                        else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                     )
                             ) {
                                 Icon(
                                     imageVector = Lucide.CircleDot,
                                     contentDescription = null,
-                                    tint = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                                    tint = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
                             Column {
                                 Text(
                                     text = if (isRecordingActive) "Recording" else "Record",
-                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                                    color = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface,
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -657,7 +662,7 @@ fun HomeScreen(
                                 Text(
                                     text = if (isRecordingActive) "Tap to stop" else "Tap to start",
                                     color = if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.75f)
-                                           else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f),
+                                           else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
