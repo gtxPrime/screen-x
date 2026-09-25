@@ -25,6 +25,16 @@ class SettingsManager(private val context: Context) {
         val KEY_ORIENTATION = stringPreferencesKey("orientation")
         val KEY_FLOATING_SHOW_MODE = stringPreferencesKey("floating_show_mode")
         val KEY_GALLERY_GRID_VIEW = booleanPreferencesKey("gallery_grid_view")
+        val KEY_SAFE_STORAGE_STOP = booleanPreferencesKey("safe_storage_stop")
+        val KEY_SAFE_STORAGE_THRESHOLD_MB = intPreferencesKey("safe_storage_threshold_mb")
+        // ADB capture: "mediaprojection" | "adb" | "ask"
+        val KEY_ADB_CAPTURE_MODE = stringPreferencesKey("adb_capture_mode")
+        val KEY_ADB_ENABLED      = booleanPreferencesKey("adb_enabled")
+        // ADB wireless connection state
+        val KEY_ADB_PORT         = intPreferencesKey("adb_port")         // wireless-debug connection port
+        val KEY_ADB_PAIRED       = booleanPreferencesKey("adb_paired")   // true once paired successfully
+        val KEY_ADB_PRIVATE_KEY  = stringPreferencesKey("adb_private_key") // Base64 RSA private key
+        val KEY_ADB_PUBLIC_KEY   = stringPreferencesKey("adb_public_key")  // Base64 RSA public key
     }
 
     val fpsFlow: Flow<Int> = context.dataStore.data.map { preferences ->
@@ -79,6 +89,39 @@ class SettingsManager(private val context: Context) {
 
     val galleryGridViewFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[KEY_GALLERY_GRID_VIEW] ?: true
+    }
+
+    val safeStorageStopFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_SAFE_STORAGE_STOP] ?: true
+    }
+
+    val safeStorageThresholdMbFlow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[KEY_SAFE_STORAGE_THRESHOLD_MB] ?: 150
+    }
+
+    /** "mediaprojection" | "adb" | "ask" — default is MediaProjection (standard) */
+    val adbCaptureModeFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_CAPTURE_MODE] ?: "mediaprojection"
+    }
+
+    val adbEnabledFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_ENABLED] ?: false
+    }
+
+    val adbPortFlow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_PORT] ?: 0
+    }
+
+    val adbPairedFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_PAIRED] ?: false
+    }
+
+    val adbPrivateKeyFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_PRIVATE_KEY] ?: ""
+    }
+
+    val adbPublicKeyFlow: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[KEY_ADB_PUBLIC_KEY] ?: ""
     }
 
     suspend fun setFps(fps: Int) {
@@ -160,6 +203,49 @@ class SettingsManager(private val context: Context) {
     suspend fun setGalleryGridView(isGridView: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[KEY_GALLERY_GRID_VIEW] = isGridView
+        }
+    }
+
+    suspend fun setSafeStorageStop(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SAFE_STORAGE_STOP] = enabled
+        }
+    }
+
+    suspend fun setSafeStorageThresholdMb(thresholdMb: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SAFE_STORAGE_THRESHOLD_MB] = thresholdMb
+        }
+    }
+
+    suspend fun setAdbEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ADB_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setAdbCaptureMode(mode: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ADB_CAPTURE_MODE] = mode
+        }
+    }
+
+    suspend fun setAdbPort(port: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ADB_PORT] = port
+        }
+    }
+
+    suspend fun setAdbPaired(paired: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ADB_PAIRED] = paired
+        }
+    }
+
+    suspend fun setAdbKeys(privateKeyB64: String, publicKeyB64: String) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_ADB_PRIVATE_KEY] = privateKeyB64
+            preferences[KEY_ADB_PUBLIC_KEY]  = publicKeyB64
         }
     }
 }
