@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,42 +28,54 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
-import android.widget.FrameLayout
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.*
 import androidx.savedstate.*
+import com.gxdevs.screenx.MainActivity
+import com.gxdevs.screenx.data.SettingsManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
-// ── Palette ───────────────────────────────────────────────────────────────────
-private val Teal      = Color(0xFF00A19B)
-private val TealDim   = Color(0x4400A19B)
-private val DarkGlass = Color(0xBB0B1412)
-private val GlassHigh = Color(0x18FFFFFF)
-private val StopRed   = Color(0xFFFF453A)
-private val BrushCyan = Color(0xFF5CE1E6)
-private val CamGreen  = Color(0xFF34C759)
-private val DismissRd = Color(0xCCFF3B30)
+// ── Minimal Palette ───────────────────────────────────────────────────────────
+private val Teal       = Color(0xFF00C9B7)
+private val StopRed    = Color(0xFFFF3B30)
+private val BrushCyan  = Color(0xFF5CE1E6)
+private val CamGreen   = Color(0xFF34C759)
+private val DismissRd  = Color(0xCCFF3B30)
+private val DarkGlass  = Color(0x990A0A0A) // Minimal translucent dark glass
+private val BtnGlass   = Color(0x22FFFFFF) // Translucent button background
+private val HairlineBd = Color(0x28FFFFFF) // Minimal delicate border
 // ─────────────────────────────────────────────────────────────────────────────
 
 class FloatingControlOverlay(private val context: Context) {
 
     private val density = context.resources.displayMetrics.density
+    private val settingsManager = SettingsManager(context)
+    private val overlayScope = CoroutineScope(Dispatchers.Main)
 
     // Pre-computed expanded pill width (dp math):
-    // outer padding(6) + orb(32) + gap(2) + inner-pad(4) + 4×btn(36) + 3×gap(2) + inner-pad(2) + outer-pad(6) = 198dp
-    private val EXPANDED_W_PX = (198 * density).toInt()
+    // orb(34) + 4×btn(34) + 4×gap(4) + padding(8) ≈ 198dp
+    private val EXPANDED_W_PX = (206 * density).toInt()
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootView: android.view.View? = null
     private var lifecycleOwner: CustomLifecycleOwner? = null
+    private var onDismissCallback: (() -> Unit)? = null
+
+    val isShowing: Boolean
+        get() = rootView != null && rootView?.windowToken != null
 
     // Compose-observable states
-    private val isExpandedState = mutableStateOf(false)
-    private val isPausedState   = mutableStateOf(false)
-    private val isRecordingState = mutableStateOf(false)
-    private val inDismissZone   = mutableStateOf(false)
-    private val lastTouchTime   = mutableStateOf(System.currentTimeMillis())
+    private val isExpandedState    = mutableStateOf(false)
+    private val isPausedState      = mutableStateOf(false)
+    private val isRecordingState   = mutableStateOf(false)
+    private val isAdbRecordingState = mutableStateOf(false)
+    private val inDismissZone      = mutableStateOf(false)
+    private val lastTouchTime      = mutableStateOf(System.currentTimeMillis())
 
     private var isOnLeftEdge = true
     private var dismissGradientView: android.view.View? = null
@@ -76,7 +92,8 @@ class FloatingControlOverlay(private val context: Context) {
         width   = WindowManager.LayoutParams.WRAP_CONTENT
         height  = WindowManager.LayoutParams.WRAP_CONTENT
         gravity = Gravity.TOP or Gravity.START
-        x = 0; y = 500
+        x = -(11 * density).toInt() // Initially 30% hidden on left edge
+        y = 600
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -85,8 +102,19 @@ class FloatingControlOverlay(private val context: Context) {
         onStop:        () -> Unit,
         onPauseToggle: () -> Unit,
         onBrushToggle: () -> Unit,
-        onScreenshot:  () -> Unit
+        onScreenshot:  () -> Unit,
+        onDismiss:     (() -> Unit)? = null
     ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(context)) {
+            return
+        }
+        if (rootView != null) {
+            showView()
+            updateState()
+            return
+        }
+
+        onDismissCallback = onDismiss
         updateState()
         lifecycleOwner = CustomLifecycleOwner().apply { onCreate(); onStart(); onResume() }
 
@@ -98,13 +126,14 @@ class FloatingControlOverlay(private val context: Context) {
                     onBrushToggle = onBrushToggle,
                     onScreenshot  = {
                         // 1. Collapse + hide
-                        isExpandedState.value = false
+                        collapsePill()
                         rootView?.postDelayed({
                             hideView()
-                            // 2. Trigger service capture (service also calls hideView=no-op + showView)
+                            // 2. Trigger capture
                             rootView?.postDelayed({ onScreenshot() }, 200)
                         }, 100)
-                    }
+                    },
+                    onDismiss     = { dismiss() }
                 )
             }
         }
@@ -118,19 +147,16 @@ class FloatingControlOverlay(private val context: Context) {
 
             @Suppress("DEPRECATION")
             override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-                // Signal Compose to reset idle timer on every touch
                 if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
                     lastTouchTime.value = System.currentTimeMillis()
                 }
 
-                // Expanded → let Compose handle all input
                 if (isExpandedState.value) {
                     inDismissZone.value = false
                     return super.dispatchTouchEvent(ev)
                 }
 
-                val metrics   = screenMetrics()
-                val dismissTh = metrics.heightPixels * 0.80f
+                val metrics = screenMetrics()
 
                 when (ev.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
@@ -147,7 +173,7 @@ class FloatingControlOverlay(private val context: Context) {
                             showDismissGradient()
                         }
                         if (isDragging) {
-                            val targetX = (initialX + dx.toInt()).coerceIn(0, metrics.widthPixels - this.width)
+                            val targetX = (initialX + dx.toInt()).coerceIn(-this.width / 2, metrics.widthPixels - this.width / 2)
                             val targetY = (initialY + dy.toInt()).coerceIn(0, metrics.heightPixels - this.height)
 
                             val ballCenterX = targetX + this.width / 2
@@ -183,7 +209,7 @@ class FloatingControlOverlay(private val context: Context) {
                         snapAnimator?.cancel()
                         when {
                             !isDragging         -> expandPill()
-                            inDismissZone.value -> { inDismissZone.value = false; dismiss() }
+                            inDismissZone.value -> { inDismissZone.value = false; dismiss(fromUserDrag = true) }
                             else                -> { inDismissZone.value = false; snapToEdge(true) }
                         }
                         return true
@@ -205,25 +231,44 @@ class FloatingControlOverlay(private val context: Context) {
         frameLayout.addView(composeView)
         rootView = frameLayout
 
-        try { windowManager.addView(rootView, layoutParams) }
-        catch (e: Exception) { e.printStackTrace() }
+        try {
+            windowManager.addView(rootView, layoutParams)
+            rootView?.post { snapToEdge(false) }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            rootView = null
+        }
     }
 
-    // ── Expand: content grows first, then x is pinned in next frame (no visual jump) ──
+    // ── Expand: undock to edge and grow ──────────────────────────────────────
     private fun expandPill() {
-        isExpandedState.value = true          // grow content immediately
-        if (!isOnLeftEdge) {
-            // Post so the view has been laid out with the new expanded width
-            rootView?.post {
-                val view    = rootView ?: return@post
-                val expandedW = view.width.takeIf { it > 0 } ?: EXPANDED_W_PX
-                val targetX   = (screenMetrics().widthPixels - expandedW).coerceAtLeast(0)
+        isExpandedState.value = true
+        val m = screenMetrics()
+        val view = rootView ?: return
+        if (isOnLeftEdge) {
+            layoutParams.x = 0
+            safeUpdateLayout(view)
+        } else {
+            val expandedW = view.width.takeIf { it > 0 } ?: EXPANDED_W_PX
+            layoutParams.x = (m.widthPixels - expandedW).coerceAtLeast(0)
+            safeUpdateLayout(view)
+        }
+        rootView?.post {
+            val v = rootView ?: return@post
+            val expandedW = v.width.takeIf { it > 0 } ?: EXPANDED_W_PX
+            if (!isOnLeftEdge) {
+                val targetX = (m.widthPixels - expandedW).coerceAtLeast(0)
                 if (targetX != layoutParams.x) {
                     layoutParams.x = targetX
-                    safeUpdateLayout(view)
+                    safeUpdateLayout(v)
                 }
             }
         }
+    }
+
+    private fun collapsePill() {
+        isExpandedState.value = false
+        rootView?.postDelayed({ snapToEdge(true) }, 50)
     }
 
     // ── Compose UI ────────────────────────────────────────────────────────────
@@ -232,35 +277,39 @@ class FloatingControlOverlay(private val context: Context) {
         onStop:        () -> Unit,
         onPauseToggle: () -> Unit,
         onBrushToggle: () -> Unit,
-        onScreenshot:  () -> Unit
+        onScreenshot:  () -> Unit,
+        onDismiss:     () -> Unit
     ) {
         var isExpanded by remember { isExpandedState }
         val isPaused   by remember { isPausedState }
         val isRecording by remember { isRecordingState }
+        val isAdbRecording by remember { isAdbRecordingState }
         val inDismiss  by remember { inDismissZone }
         val lastTouch  by remember { lastTouchTime }
 
-        // ── Auto-dim: pill fades to 15% after 2.5s idle ───────────────────
+        // ── Auto-dim and Auto-collapse ────────────────────────────────────────
         var isIdle by remember { mutableStateOf(false) }
         LaunchedEffect(lastTouch, isExpanded) {
             isIdle = false
-            if (!isExpanded) { delay(2500L); isIdle = true }
+            if (isExpanded) {
+                // If user leaves the expanded pill untouched for 6 seconds, collapse back to ball
+                delay(6000L)
+                collapsePill()
+            } else {
+                delay(3000L)
+                isIdle = true
+            }
         }
         val pillAlpha by animateFloatAsState(
-            targetValue   = if (isIdle) 0.15f else 1f,
-            animationSpec = tween(700, easing = FastOutSlowInEasing),
+            targetValue   = if (isIdle) 0.65f else 1f,
+            animationSpec = tween(400, easing = FastOutSlowInEasing),
             label         = "pillAlpha"
         )
 
-        // ── Pill shape: morph corner radius ───────────────────────────────
-        val corner by animateDpAsState(
-            targetValue   = if (isExpanded) 16.dp else 40.dp,
-            animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
-            label         = "corner"
-        )
-        val pillShape = RoundedCornerShape(corner)
+        // ── Pill shape ────────────────────────────────────────────────────────
+        val pillShape = CircleShape
 
-        // ── Staggered button appearance (alpha + spring-scale) ────────────
+        // ── Staggered button appearance ───────────────────────────────────────
         var b1 by remember { mutableStateOf(false) }
         var b2 by remember { mutableStateOf(false) }
         var b3 by remember { mutableStateOf(false) }
@@ -268,130 +317,223 @@ class FloatingControlOverlay(private val context: Context) {
         LaunchedEffect(isExpanded) {
             if (isExpanded) {
                 delay(10L); b1 = true
-                delay(55L); b2 = true
-                delay(55L); b3 = true
-                delay(55L); b4 = true
+                delay(35L); b2 = true
+                delay(35L); b3 = true
+                delay(35L); b4 = true
             } else {
                 b4 = false; b3 = false; b2 = false; b1 = false
             }
         }
 
-        // ── Pulsing orb glow when collapsed ───────────────────────────────
-        val infiniteT = rememberInfiniteTransition(label = "orb")
-        val orbGlow by infiniteT.animateFloat(
-            0.35f, 0.75f,
-            infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-            label = "glow"
-        )
-
         Box(
             modifier = Modifier
                 .graphicsLayer { alpha = pillAlpha }
                 .wrapContentSize()
-                // Subtle neutral dark shadow
-                .then(if (!inDismiss) Modifier.shadow(
-                    elevation    = if (isExpanded) 16.dp else 6.dp,
+                .shadow(
+                    elevation    = if (isExpanded) 12.dp else 6.dp,
                     shape        = pillShape,
-                    ambientColor = Color.Black.copy(alpha = 0.35f),
-                    spotColor    = Color.Black.copy(alpha = 0.45f)
-                ) else Modifier.shadow(
-                    elevation    = 16.dp,
-                    shape        = pillShape,
-                    ambientColor = StopRed.copy(alpha = 0.35f),
-                    spotColor    = StopRed.copy(alpha = 0.45f)
-                ))
+                    ambientColor = Color.Black.copy(alpha = 0.5f),
+                    spotColor    = if (inDismiss) StopRed else if (isRecording) StopRed.copy(0.4f) else Color.Black.copy(0.4f)
+                )
         ) {
-            // Glass body
+            // Semi-transparent black glass body
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .clip(pillShape)
                     .background(
-                        color = if (inDismiss) DismissRd
-                                else Color(0xB31F1F21)
+                        color = when {
+                            inDismiss   -> DismissRd
+                            isExpanded  -> DarkGlass
+                            isRecording -> Color(0xB3140A0A)
+                            else        -> Color(0xB3101010) // Black semi-transparent
+                        }
                     )
             )
-            // Border
-            Box(modifier = Modifier
-                .matchParentSize()
-                .border(
-                    0.5.dp,
-                    Color(0x28FFFFFF),
-                    pillShape
-                )
+            // Delicate hairline border
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .border(
+                        width = 0.6.dp,
+                        color = when {
+                            inDismiss   -> Color.White.copy(alpha = 0.8f)
+                            isRecording -> StopRed.copy(alpha = 0.6f)
+                            else        -> HairlineBd
+                        },
+                        shape = pillShape
+                    )
             )
 
-            // Content row — NO AnimatedVisibility for width (instant toggle eliminates jitter)
+            // Content Row
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier              = Modifier.padding(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier              = Modifier.padding(2.dp)
             ) {
-                // ── Orb size animation for minimalist look ──
-                val orbSize by animateDpAsState(
-                    targetValue   = if (isExpanded) 28.dp else 24.dp,
-                    animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium),
-                    label         = "orbSize"
-                )
-
+                // ── Handle / Orb ──
+                val orbSize = if (isExpanded) 31.dp else 35.dp
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
                         .size(orbSize)
                         .clip(CircleShape)
-                        .background(
-                            if (inDismiss)
-                                Brush.radialGradient(listOf(StopRed, Color(0xCCAA1A10)))
-                            else if (isExpanded)
-                                Brush.radialGradient(listOf(Color(0xFF3A3A3C), Color(0xFF1C1C1E)))
-                            else
-                                Brush.radialGradient(listOf(Color(0x803A3A3C), Color(0x991C1C1E)))
+                        .then(
+                            if (inDismiss) {
+                                Modifier.background(Brush.radialGradient(listOf(StopRed, Color(0xCCAA1A10))))
+                            } else {
+                                Modifier.background(
+                                    when {
+                                        isExpanded  -> BtnGlass
+                                        isRecording -> Color(0x44FF3B30)
+                                        else        -> Color(0x1AFFFFFF)
+                                    }
+                                )
+                            }
                         )
-                        .then(if (isExpanded) Modifier.border(1.dp, Color(0x3DFFFFFF), CircleShape) else Modifier)
                         .clickable {
                             if (isExpanded) {
-                                isExpanded = false
-                                rootView?.postDelayed({ snapToEdge(true) }, 50)
+                                collapsePill()
                             } else {
                                 expandPill()
                             }
                         }
                 ) {
-                    val icon = when {
-                        inDismiss  -> Icons.Default.Delete
-                        isExpanded -> Icons.Default.KeyboardArrowDown
-                        else       -> Icons.Default.FiberManualRecord
+                    if (isRecording && !isExpanded && !inDismiss) {
+                        // Pulsing red recording dot
+                        val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                        val scale by infiniteTransition.animateFloat(
+                            initialValue  = 0.8f,
+                            targetValue   = 1.2f,
+                            animationSpec = infiniteRepeatable(
+                                animation  = tween(700, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "dotScale"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .scale(scale)
+                                .clip(CircleShape)
+                                .background(StopRed)
+                        )
+                    } else {
+                        val icon = when {
+                            inDismiss   -> Icons.Outlined.Delete
+                            isExpanded  -> if (isOnLeftEdge) Icons.Outlined.ChevronLeft else Icons.Outlined.ChevronRight
+                            isRecording -> Icons.Outlined.FiberManualRecord
+                            else        -> Icons.Outlined.Videocam
+                        }
+                        Icon(
+                            imageVector        = icon,
+                            contentDescription = null,
+                            tint               = Color.White,
+                            modifier           = Modifier.size(16.dp)
+                        )
                     }
-                    val iconSize = if (isExpanded || inDismiss) 16.dp else 8.dp
-                    Icon(
-                        icon, 
-                        null, 
-                        tint     = if (inDismiss) Color.White else Color(0xEEFFFFFF), 
-                        modifier = Modifier.size(iconSize)
-                    )
                 }
 
-                // ── Expanded buttons: layout is INSTANT (no width animation = no jitter) ──
-                // Buttons visually spring in via scale/alpha WITHOUT changing window size
+                // ── Expanded action buttons ──
                 if (isExpanded) {
                     Row(
                         verticalAlignment     = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier              = Modifier.padding(start = 4.dp, end = 2.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier              = Modifier.padding(start = 2.dp, end = 4.dp)
                     ) {
-                        if (isRecording) {
-                            GlassBtn(b1, if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause, Color.White) { onPauseToggle() }
-                            GlassBtn(b2, Icons.Default.Stop,      StopRed)  { onStop() }
-                            GlassBtn(b3, Icons.Default.Brush,     BrushCyan) { onBrushToggle() }
-                            GlassBtn(b4, Icons.Default.CameraAlt, CamGreen)  { onScreenshot() }
-                        } else {
-                            // Play/Record button to start recording directly
-                            GlassBtn(b1, Icons.Default.PlayArrow, CamGreen) {
-                                isExpanded = false
-                                val intent = Intent(context, TileHelperActivity::class.java).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        if (isAdbRecording) {
+                            // ADB Recording Controls
+                            GlassBtn(b1, Icons.Outlined.Stop, Color.White) {
+                                collapsePill()
+                                val intent = Intent(context, AdbRecordService::class.java).apply {
+                                    action = AdbRecordService.ACTION_STOP_ADB
+                                }
+                                context.startService(intent)
+                            }
+                            GlassBtn(b2, Icons.Outlined.CameraAlt, Color.White) { onScreenshot() }
+                            GlassBtn(b3, Icons.Outlined.Home, Color.White) {
+                                collapsePill()
+                                val intent = Intent(context, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                                 }
                                 context.startActivity(intent)
+                            }
+                            GlassBtn(b4, Icons.Outlined.Close, Color.White) {
+                                collapsePill()
+                            }
+                        } else if (isRecording) {
+                            // Standard MediaProjection Controls
+                            GlassBtn(b1, if (isPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, Color.White) { onPauseToggle() }
+                            GlassBtn(b2, Icons.Outlined.Stop, Color.White) {
+                                collapsePill()
+                                onStop()
+                            }
+                            GlassBtn(b3, Icons.Outlined.Brush, Color.White) { onBrushToggle() }
+                            GlassBtn(b4, Icons.Outlined.CameraAlt, Color.White) { onScreenshot() }
+                        } else {
+                            // Standby Controls:
+                            // 1. Record (respects ADB setting and handles unpaired gracefully!)
+                            GlassBtn(b1, Icons.Outlined.RadioButtonChecked, Color.White) {
+                                collapsePill()
+                                overlayScope.launch {
+                                    val adbEnabled = settingsManager.adbEnabledFlow.first()
+                                    val captureMode = settingsManager.adbCaptureModeFlow.first()
+                                    if (adbEnabled && captureMode == "adb") {
+                                        val isAdbPaired = settingsManager.adbPairedFlow.first()
+                                        if (!isAdbPaired) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Wireless ADB is not paired. Please open ScreenX to pair.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                            val intent = Intent(context, MainActivity::class.java).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                            }
+                                            context.startActivity(intent)
+                                            return@launch
+                                        }
+                                        val intent = Intent(context, AdbRecordService::class.java).apply {
+                                            action = AdbRecordService.ACTION_START_ADB
+                                        }
+                                        try {
+                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                context.startForegroundService(intent)
+                                            } else {
+                                                context.startService(intent)
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("FloatingControlOverlay", "Failed to start ADB service", e)
+                                        }
+                                    } else {
+                                        val intent = Intent(context, TileHelperActivity::class.java).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                }
+                            }
+                            // 2. Open ScreenX Home
+                            GlassBtn(b2, Icons.Outlined.Home, Color.White) {
+                                collapsePill()
+                                val intent = Intent(context, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                }
+                                context.startActivity(intent)
+                            }
+                            // 3. Settings
+                            GlassBtn(b3, Icons.Outlined.Settings, Color.White) {
+                                collapsePill()
+                                val intent = Intent(context, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                                    putExtra(MainActivity.EXTRA_OPEN_SETTINGS, true)
+                                }
+                                context.startActivity(intent)
+                            }
+                            // 4. Close (Collapse back to ball)
+                            GlassBtn(b4, Icons.Outlined.Close, Color.White) {
+                                collapsePill()
                             }
                         }
                     }
@@ -419,23 +561,35 @@ class FloatingControlOverlay(private val context: Context) {
         }
     }
 
-    // ── Snap to left or right edge ────────────────────────────────────────────
+    // ── Snap to left or right edge with 30% hidden in closed form ──────────────
     @Suppress("DEPRECATION")
     private fun snapToEdge(animate: Boolean) {
         val view = rootView ?: return
         val m = screenMetrics()
-        val viewW  = view.width.takeIf { it > 0 } ?: (32 * density).toInt()
-        val viewH  = view.height.takeIf { it > 0 } ?: (32 * density).toInt()
-        val targetX = if (layoutParams.x + viewW / 2 < m.widthPixels / 2) 0 else m.widthPixels - viewW
-        val targetY = layoutParams.y.coerceIn(0, m.heightPixels - viewH)
-        isOnLeftEdge = (targetX == 0)
+        val viewW  = view.width.takeIf { it > 0 } ?: (39 * density).toInt()
+        val viewH  = view.height.takeIf { it > 0 } ?: (39 * density).toInt()
+
+        val isLeft = (layoutParams.x + viewW / 2) < (m.widthPixels / 2)
+        isOnLeftEdge = isLeft
+
+        // If collapsed: dock ~30% into the screen edge for a minimal, sleek handle
+        // If expanded: stay fully on screen
+        val targetX = if (isExpandedState.value) {
+            if (isLeft) 0 else m.widthPixels - viewW
+        } else {
+            if (isLeft) -(viewW * 0.30f).toInt() else m.widthPixels - (viewW * 0.70f).toInt()
+        }
+
+        val minY = (50 * density).toInt()
+        val maxY = (m.heightPixels - viewH - 60 * density).toInt()
+        val targetY = layoutParams.y.coerceIn(minY, maxY)
 
         if (!animate) {
             layoutParams.x = targetX; layoutParams.y = targetY; safeUpdateLayout(view); return
         }
         val sx = layoutParams.x; val sy = layoutParams.y
         ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 300; interpolator = DecelerateInterpolator(1.8f)
+            duration = 260; interpolator = DecelerateInterpolator(1.8f)
             addUpdateListener { a ->
                 val t = 1f - (1f - a.animatedFraction).let { it * it * it }
                 layoutParams.x = (sx + (targetX - sx) * t).toInt()
@@ -456,23 +610,37 @@ class FloatingControlOverlay(private val context: Context) {
     }
 
     fun updateState() {
-        isPausedState.value = ScreenRecordService.isPaused
-        isRecordingState.value = ScreenRecordService.isRecording
+        isPausedState.value       = ScreenRecordService.isPaused
+        isAdbRecordingState.value = AdbRecordService.isRecording
+        isRecordingState.value    = ScreenRecordService.isRecording || AdbRecordService.isRecording
+        collapsePill()
     }
+
     private fun setInDismissZone(inZone: Boolean) {
         if (inDismissZone.value != inZone) {
             inDismissZone.value = inZone
             dismissGradientView?.postInvalidate()
         }
     }
-    fun hideView()     { rootView?.visibility = android.view.View.GONE }
-    fun showView()     { rootView?.visibility = android.view.View.VISIBLE }
 
-    fun dismiss() {
+    fun hideView() { rootView?.visibility = android.view.View.GONE }
+    fun showView() { rootView?.visibility = android.view.View.VISIBLE }
+
+    fun dismiss(fromUserDrag: Boolean = false) {
+        val callback = onDismissCallback
+        onDismissCallback = null
         hideDismissGradient()
         lifecycleOwner?.onDestroy()
-        rootView?.let { try { windowManager.removeView(it) } catch (_: Exception) {} }
-        rootView = null; lifecycleOwner = null
+        rootView?.let { 
+            try { 
+                windowManager.removeView(it) 
+            } catch (_: Exception) {} 
+        }
+        rootView = null
+        lifecycleOwner = null
+        if (fromUserDrag) {
+            callback?.invoke()
+        }
     }
 
     fun bringToFront() {
@@ -498,24 +666,20 @@ class FloatingControlOverlay(private val context: Context) {
                 val isHighlighted = inDismissZone.value
                 val radius = if (isHighlighted) 34f * density else 30f * density
 
-                // Draw a very subtle dark background overlay
                 p.shader = null
                 p.style = android.graphics.Paint.Style.FILL
                 p.color = 0x22000000
                 c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
 
-                // Draw the main circle background
                 p.color = if (isHighlighted) 0xFFFF352A.toInt() else 0xCC1C1C1E.toInt()
                 p.style = android.graphics.Paint.Style.FILL
                 c.drawCircle(cx, cy, radius, p)
 
-                // Draw the border of the circle
                 p.color = if (isHighlighted) 0xFFFFFFFF.toInt() else 0xAAFF3B30.toInt()
                 p.style = android.graphics.Paint.Style.STROKE
                 p.strokeWidth = 1.5f * density
                 c.drawCircle(cx, cy, radius, p)
 
-                // Draw the trash can icon in the center of the circle
                 p.reset()
                 p.isAntiAlias = true
                 p.color = android.graphics.Color.WHITE
@@ -525,14 +689,10 @@ class FloatingControlOverlay(private val context: Context) {
 
                 val topY = cy - 5f * density
                 val botY = cy + 6f * density
-                
-                // Draw bin outline (bottom of trash can)
+
                 c.drawRoundRect(cx - 5f * density, topY + 2f * density, cx + 5f * density, botY, 1f * density, 1f * density, p)
-                // Draw lid line
                 c.drawLine(cx - 7f * density, topY + 1f * density, cx + 7f * density, topY + 1f * density, p)
-                // Draw lid handle
                 c.drawRoundRect(cx - 2.5f * density, topY - 2f * density, cx + 2.5f * density, topY + 1f * density, 0.5f * density, 0.5f * density, p)
-                // Draw vertical lines inside
                 c.drawLine(cx - 2f * density, topY + 4f * density, cx - 2f * density, botY - 2f * density, p)
                 c.drawLine(cx + 2f * density, topY + 4f * density, cx + 2f * density, botY - 2f * density, p)
             }
@@ -572,7 +732,7 @@ class FloatingControlOverlay(private val context: Context) {
     }
 }
 
-// ── Glassmorphic button: simple icon with no individual background shape ──────
+// ── Translucent Glassmorphic Button ──────────────────────────────────────────
 @Composable
 private fun GlassBtn(
     visible: Boolean,
@@ -593,11 +753,13 @@ private fun GlassBtn(
     Box(
         contentAlignment = Alignment.Center,
         modifier         = Modifier
-            .size(34.dp)
+            .size(32.dp)
             .scale(scale)
             .graphicsLayer { this.alpha = alpha }
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.10f)) // Translucent glass button
             .clickable(enabled = visible, onClick = onClick)
     ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(17.dp))
+        Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
     }
 }
