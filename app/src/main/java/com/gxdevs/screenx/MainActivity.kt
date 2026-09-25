@@ -448,7 +448,7 @@ class MainActivity : ComponentActivity() {
                 if (!isPaired) {
                     Toast.makeText(
                         this@MainActivity,
-                        "Wireless ADB is not paired. Please pair first.",
+                        "Stealth Recording is not paired. Please pair first.",
                         Toast.LENGTH_LONG
                     ).show()
                     return@launch
@@ -464,8 +464,8 @@ class MainActivity : ComponentActivity() {
                         startService(startIntent)
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("MainActivity", "Failed to start ADB recording service", e)
-                    Toast.makeText(this@MainActivity, "Could not start ADB recording: ${e.message}", Toast.LENGTH_SHORT).show()
+                    android.util.Log.e("MainActivity", "Failed to start Stealth recording service", e)
+                    Toast.makeText(this@MainActivity, "Could not start Stealth recording: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }

@@ -342,7 +342,7 @@ fun SettingsScreen(
                     OrionSectionHeader("AUDIO SOURCE")
                     OrionStackedGroupCard {
                         val audioSubtitle = if (isAdbRecordingDefault) {
-                            "Locked to No Audio — ADB screen recording does not support sound capture"
+                            "Locked to No Audio — Stealth screen recording does not support sound capture"
                         } else {
                             when (audioSource) {
                                 "Mic" -> "Microphone capture for voice & ambient sound"
@@ -382,7 +382,7 @@ fun SettingsScreen(
                                 if (isAdbRecordingDefault) {
                                     Toast.makeText(
                                         context,
-                                        "Audio is locked to 'No Audio' while ADB recording is set as default",
+                                        "Audio is locked to 'No Audio' while Stealth Recording is set as default",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 } else {
@@ -457,12 +457,12 @@ fun SettingsScreen(
             // 6. ADB STEALTH RECORDING
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OrionSectionHeader("ADB STEALTH RECORDING")
+                    OrionSectionHeader("STEALTH RECORDING")
                     OrionStackedGroupCard {
                         // Merged ADB Switch: turning ON triggers info dialog first
                         OrionSettingsSwitchItem(
                             icon = Lucide.Zap,
-                            title = "Enable ADB Recording",
+                            title = "Enable Stealth Recording",
                             subtitle = "Undetectable background capture for apps with record protection (Snapchat, Instagram, banking)",
                             checked = adbEnabled,
                             onCheckedChange = { willEnable ->
@@ -483,9 +483,9 @@ fun SettingsScreen(
                             // Wireless ADB Pairing Row
                             OrionSettingsValueItem(
                                 icon = Lucide.Usb,
-                                title = "Wireless ADB Pairing",
+                                title = "Wireless Stealth Pairing",
                                 subtitle = if (adbPaired)
-                                    "Paired — ADB recording ready to use"
+                                    "Paired — Stealth recording ready to use"
                                 else
                                     "Not paired — tap to set up one-time pairing",
                                 value = if (adbPaired) "✓ Paired" else "Set Up",
@@ -502,7 +502,7 @@ fun SettingsScreen(
 
                             OrionSettingsDivider()
                             val adbModeDisplay = when (adbCaptureMode) {
-                                "adb" -> "ADB Only"
+                                "adb" -> "Stealth Only"
                                 "ask" -> "Ask Every Time"
                                 else -> "MediaProjection (Default)"
                             }
@@ -517,7 +517,7 @@ fun SettingsScreen(
                             OrionSettingsDivider()
                             OrionSettingsInfoItem(
                                 icon = Lucide.Info,
-                                title = "ADB Limitations & How It Works",
+                                title = "Stealth Recording Info & Limitations",
                                 subtitle = "No audio capture, 3-min auto-stop per session. Tap to review full details.",
                                 badge = "Stealth",
                                 onClick = { showAdbLimitationsDialog = true }
@@ -720,7 +720,7 @@ fun SettingsScreen(
     if (showAdbModeDialog) {
         val modeMapping = mapOf(
             "mediaprojection" to "MediaProjection (Default)",
-            "adb" to "ADB Only",
+            "adb" to "Stealth Only",
             "ask" to "Ask Every Time"
         )
         OptionSelectionDialog(

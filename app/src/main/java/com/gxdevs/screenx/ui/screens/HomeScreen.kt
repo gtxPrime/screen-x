@@ -944,7 +944,7 @@ fun HomeScreen(
                                     if (!adbPaired) {
                                         android.widget.Toast.makeText(
                                             context,
-                                            "Wireless ADB is not paired. Please pair ADB first.",
+                                            "Stealth Recording is not paired. Please complete setup first.",
                                             android.widget.Toast.LENGTH_LONG
                                         ).show()
                                         showAdbPairingDialog = true
@@ -992,7 +992,7 @@ fun HomeScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = if (isAdbRecording) "ADB Recording Active" else "Stealth ADB Record",
+                                        text = if (isAdbRecording) "Stealth Recording Active" else "Stealth Recording",
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold
@@ -1046,7 +1046,7 @@ fun HomeScreen(
                             ) {
                                 Icon(
                                     imageVector = Lucide.Info,
-                                    contentDescription = "ADB Information",
+                                    contentDescription = "Stealth Recording Information",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -2025,7 +2025,7 @@ fun AdbPairingDialog(
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Wireless ADB Setup",
+                            "Stealth Recording Setup",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = (-0.4).sp,
@@ -2328,7 +2328,7 @@ fun AdbPairingDialog(
                                             )
                                             isWorking = false
                                             result.onSuccess {
-                                                successMsg = "Connected! ADB recording is ready."
+                                                successMsg = "Connected! Stealth Recording is ready."
                                             }.onFailure {
                                                 errorMsg = it.message ?: "Connection failed"
                                             }
@@ -2471,7 +2471,7 @@ fun AdbLimitationsDialog(
                     }
                     Column {
                         Text(
-                            text = if (onConfirmEnable != null) "Enable ADB Recording" else "ADB Recording",
+                            text = if (onConfirmEnable != null) "Enable Stealth Recording" else "Stealth Recording",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = (-0.5).sp,
@@ -2511,7 +2511,7 @@ fun AdbLimitationsDialog(
                                 color = Color(0xFF2E9E5B)
                             )
                             Text(
-                                text = "Apps like Snapchat, Instagram, and banking apps cannot detect ADB recording — it bypasses their screenshot/screen-record detection entirely.",
+                                text = "Apps like Snapchat, Instagram, and banking apps cannot detect Stealth Recording — it bypasses their screenshot/screen-record detection entirely.",
                                 fontSize = 12.sp,
                                 color = Color(0xFF2E9E5B).copy(alpha = 0.85f),
                                 lineHeight = 17.sp
@@ -2525,7 +2525,7 @@ fun AdbLimitationsDialog(
                     AdbLimitationRow(
                         icon = Lucide.VolumeX,
                         label = "No Audio Capture",
-                        detail = "ADB's screenrecord tool cannot capture microphone or system audio. Use MediaProjection mode if audio is needed.",
+                        detail = "Stealth Recording cannot capture microphone or system audio. Use standard recording mode if audio is needed.",
                         isWarning = true
                     )
                     AdbLimitationRow(
@@ -2537,13 +2537,13 @@ fun AdbLimitationsDialog(
                     AdbLimitationRow(
                         icon = Lucide.Usb,
                         label = "One-Time Wireless Pairing",
-                        detail = "ADB recording requires pairing ScreenX with itself once via Android's Wireless Debugging (Android 11+). After that, it works silently forever.",
+                        detail = "Stealth Recording requires pairing ScreenX with itself once via Android's Wireless Debugging (Android 11+). After that, it works silently forever.",
                         isWarning = false
                     )
                     AdbLimitationRow(
                         icon = Lucide.Smartphone,
                         label = "Android 11+ Required",
-                        detail = "Wireless ADB pairing (loopback) is only available on Android 11 (API 30) and above. Older devices fall back to MediaProjection automatically.",
+                        detail = "Stealth Recording pairing (loopback) is only available on Android 11 (API 30) and above. Older devices fall back to standard recording automatically.",
                         isWarning = false
                     )
                 }

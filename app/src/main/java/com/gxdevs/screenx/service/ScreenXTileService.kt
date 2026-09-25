@@ -137,9 +137,9 @@ class ScreenXTileService : TileService() {
 
         if (isStandard || isAdb) {
             tile.state = Tile.STATE_ACTIVE
-            tile.label = if (isAdb) "Stop ADB Record" else "Stop Recording"
+            tile.label = if (isAdb) "Stop Stealth Record" else "Stop Recording"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = if (isAdb) "ADB Recording…" else if (ScreenRecordService.isPaused) "Paused" else "Recording…"
+                tile.subtitle = if (isAdb) "Stealth Recording…" else if (ScreenRecordService.isPaused) "Paused" else "Recording…"
             }
         } else {
             tile.state = Tile.STATE_INACTIVE

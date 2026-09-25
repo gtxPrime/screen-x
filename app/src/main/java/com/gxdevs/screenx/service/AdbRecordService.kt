@@ -87,7 +87,7 @@ class AdbRecordService : LifecycleService() {
         if (isRecording) return
 
         try {
-            val notification = buildNotification("ADB Recording…")
+            val notification = buildNotification("Stealth Recording…")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -104,7 +104,7 @@ class AdbRecordService : LifecycleService() {
             notifyTileService()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start foreground service", e)
-            showToast("Failed to start ADB service: ${e.message}")
+            showToast("Failed to start Stealth service: ${e.message}")
             finish(success = false)
             return
         }
@@ -115,7 +115,7 @@ class AdbRecordService : LifecycleService() {
                 // 1. Verify ADB is paired
                 val isPaired = settingsManager.adbPairedFlow.first()
                 if (!isPaired) {
-                    showToast("Wireless ADB is not paired. Please open ScreenX Settings to pair.")
+                    showToast("Wireless Stealth pairing is not set up. Please open ScreenX Settings to pair.")
                     return@launch
                 }
 
@@ -128,7 +128,7 @@ class AdbRecordService : LifecycleService() {
 
                 val mgr = AdbManager.manager
                 if (mgr == null) {
-                    showToast("ADB connection is not ready. Please re-pair in Settings.")
+                    showToast("Stealth recording connection is not ready. Please re-pair in Settings.")
                     return@launch
                 }
 
@@ -165,15 +165,15 @@ class AdbRecordService : LifecycleService() {
                         arrayOf("video/mp4"),
                         null
                     )
-                    showToast("ADB recording saved ✓")
+                    showToast("Stealth recording saved ✓")
                     notifyRecordingSaved()
                 } else {
-                    showToast("ADB recording ended without saving video")
+                    showToast("Stealth recording ended without saving video")
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "ADB recording error", e)
-                showToast("ADB error: ${e.message ?: "Unknown error"}")
+                Log.e(TAG, "Stealth recording error", e)
+                showToast("Stealth error: ${e.message ?: "Unknown error"}")
             } finally {
                 finish(success = recordingSuccess)
             }
@@ -238,9 +238,9 @@ class AdbRecordService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "ADB Recording",
+                "Stealth Recording",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply { description = "Status of ADB-based screen recording" }
+            ).apply { description = "Status of Stealth screen recording" }
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
                 .createNotificationChannel(channel)
         }
@@ -257,7 +257,7 @@ class AdbRecordService : LifecycleService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("ScreenX — ADB Recording")
+            .setContentTitle("ScreenX — Stealth Recording")
             .setContentText(status)
             .setSmallIcon(com.gxdevs.screenx.R.drawable.ic_notification)
             .setContentIntent(mainIntent)

@@ -130,8 +130,8 @@ class PairingInputService : Service() {
             result.onSuccess {
                 SettingsManager(this@PairingInputService).setAdbPaired(true)
                 showResultNotification(
-                    title = "ScreenX ADB Paired Successfully!",
-                    text = "Tap to open ScreenX. ADB screen recording is now ready."
+                    title = "ScreenX Stealth Paired Successfully!",
+                    text = "Tap to open ScreenX. Stealth Recording is now ready."
                 )
                 Toast.makeText(this@PairingInputService, "ScreenX Paired Successfully!", Toast.LENGTH_LONG).show()
 
@@ -276,7 +276,7 @@ class PairingInputService : Service() {
 
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Wireless ADB Pairing",
+            "Wireless Stealth Pairing",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Notification to enter the 6-digit wireless debugging code"
