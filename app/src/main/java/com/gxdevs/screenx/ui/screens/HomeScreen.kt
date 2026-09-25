@@ -49,6 +49,7 @@ import com.composables.icons.lucide.EllipsisVertical
 import com.composables.icons.lucide.Film
 import com.composables.icons.lucide.HardDrive
 import com.composables.icons.lucide.Image
+import com.composables.icons.lucide.Info
 import com.composables.icons.lucide.Mic
 import com.composables.icons.lucide.MicOff
 import com.composables.icons.lucide.Play
@@ -56,23 +57,36 @@ import com.composables.icons.lucide.RotateCcw
 import com.composables.icons.lucide.Scissors
 import com.composables.icons.lucide.Settings
 import com.composables.icons.lucide.Share2
+import com.composables.icons.lucide.Shield
 import com.composables.icons.lucide.Smartphone
 import com.composables.icons.lucide.Tablet
 import com.composables.icons.lucide.Trash2
+import com.composables.icons.lucide.TriangleAlert
+import com.composables.icons.lucide.Usb
 import com.composables.icons.lucide.Video
 import com.composables.icons.lucide.Volume2
+import com.composables.icons.lucide.VolumeX
 import com.composables.icons.lucide.X
+import com.composables.icons.lucide.Zap
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
@@ -111,7 +125,19 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.core.content.ContextCompat
+import com.gxdevs.screenx.data.AdbManager
 import com.gxdevs.screenx.data.SettingsManager
+import com.gxdevs.screenx.service.PairingInputService
+import com.gxdevs.screenx.utils.NetworkUtils
 import com.gxdevs.screenx.utils.RecordedVideo
 import com.gxdevs.screenx.utils.VideoHelper
 import com.gxdevs.screenx.utils.DeviceCapabilitiesHelper
@@ -193,45 +219,56 @@ suspend fun loadVideoThumbnail(context: android.content.Context, videoUri: Uri):
 fun HomeScreen(
     videos: List<RecordedVideo>,
     onStartRecordingClick: () -> Unit,
+    onAdbRecordClick: () -> Unit,
     onDeleteVideo: (RecordedVideo) -> Unit,
     isRecordingActive: Boolean,
     settingsManager: SettingsManager,
     onScreenshotClick: () -> Unit,
     onViewAllClick: () -> Unit,
-    onTrimVideoClick: () -> Unit
+    onTrimVideoClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var selectedVideoForPlayback by remember { mutableStateOf<RecordedVideo?>(null) }
-    
-    // Bottom Sheet State
-    val sheetState = rememberModalBottomSheetState()
-    var showSettingsSheet by remember { mutableStateOf(false) }
 
     // Settings Flows
     val resolution by settingsManager.resolutionFlow.collectAsState(initial = "1080p")
     val fps by settingsManager.fpsFlow.collectAsState(initial = 30)
     val bitrate by settingsManager.bitrateFlow.collectAsState(initial = 8000000)
     val audioSource by settingsManager.audioSourceFlow.collectAsState(initial = "Mic")
-    val countdown by settingsManager.countdownFlow.collectAsState(initial = 3)
-    val showFloating by settingsManager.showFloatingFlow.collectAsState(initial = true)
-    val hideDuringRecord by settingsManager.hideDuringRecordFlow.collectAsState(initial = false)
-    val themeMode by settingsManager.themeModeFlow.collectAsState(initial = "system")
-    val shakeToStop by settingsManager.shakeToStopFlow.collectAsState(initial = false)
     val orientation by settingsManager.orientationFlow.collectAsState(initial = "Auto")
-    val floatingShowMode by settingsManager.floatingShowModeFlow.collectAsState(initial = "Only when recording")
+    val safeStorageStop by settingsManager.safeStorageStopFlow.collectAsState(initial = true)
+    val adbEnabled by settingsManager.adbEnabledFlow.collectAsState(initial = false)
+    val adbPaired by settingsManager.adbPairedFlow.collectAsState(initial = false)
 
-    // Option Dialog Flags (inside bottom sheet & main card)
-    var showResDialog by remember { mutableStateOf(false) }
-    var showFpsDialog by remember { mutableStateOf(false) }
-    var showBitrateDialog by remember { mutableStateOf(false) }
+    // Option Dialog Flags
     var showAudioDialog by remember { mutableStateOf(false) }
-    var showCountdownDialog by remember { mutableStateOf(false) }
-    var showFloatingShowModeDialog by remember { mutableStateOf(false) }
-    var showThemeDialog by remember { mutableStateOf(false) }
+    var showAdbLimitationsDialog by remember { mutableStateOf(false) }
+    var showAdbPairingDialog by remember { mutableStateOf(false) }
+
+    // Dynamic storage calculations
+    val freeSpaceGB = remember {
+        try {
+            val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            (stat.blockSizeLong * stat.availableBlocksLong) / (1024 * 1024 * 1024)
+        } catch (_: Exception) {
+            42L
+        }
+    }
+    val usedPercent = remember {
+        try {
+            val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            val total = stat.blockSizeLong * stat.blockCountLong
+            val free = stat.blockSizeLong * stat.availableBlocksLong
+            if (total > 0) (((total - free) * 100) / total).toInt() else 24
+        } catch (_: Exception) {
+            24
+        }
+    }
 
     // Check internal audio status
-    val isInternalAudioSelected = audioSource == "System"
+    val isInternalAudioSelected = audioSource == "System" || audioSource == "MicSystem"
 
     // Configuration / Orientation detection
     val configuration = LocalConfiguration.current
@@ -315,8 +352,17 @@ fun HomeScreen(
 
                         // Toggle 2: Audio Source
                         StatusToggleItem(
-                            icon = if (audioSource == "System") Lucide.Volume2 else Lucide.Mic,
-                            label = if (audioSource == "System") "Device Audio" else "Microphone",
+                            icon = when (audioSource) {
+                                "System", "MicSystem" -> Lucide.Volume2
+                                "None" -> Lucide.VolumeX
+                                else -> Lucide.Mic
+                            },
+                            label = when (audioSource) {
+                                "System" -> "Device Audio"
+                                "MicSystem" -> "Mic + Device"
+                                "None" -> "No Audio"
+                                else -> "Microphone"
+                            },
                             isActive = true,
                             onClick = { showAudioDialog = true }
                         )
@@ -373,7 +419,7 @@ fun HomeScreen(
                         )
                     }
                     BouncyIconButton(
-                        onClick = { showSettingsSheet = true }
+                        onClick = onSettingsClick
                     ) {
                         Icon(
                             imageVector = Lucide.Settings,
@@ -399,7 +445,12 @@ fun HomeScreen(
                             .height(40.dp)
                             .bouncyClickable {
                                 coroutineScope.launch {
-                                    val nextSource = if (audioSource == "Mic") "System" else "Mic"
+                                    val nextSource = when (audioSource) {
+                                        "Mic" -> "System"
+                                        "System" -> "MicSystem"
+                                        "MicSystem" -> "None"
+                                        else -> "Mic"
+                                    }
                                     settingsManager.setAudioSource(nextSource)
                                 }
                             }
@@ -410,14 +461,23 @@ fun HomeScreen(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                imageVector = Lucide.Volume2,
+                                imageVector = when (audioSource) {
+                                    "System", "MicSystem" -> Lucide.Volume2
+                                    "None" -> Lucide.VolumeX
+                                    else -> Lucide.Mic
+                                },
                                 contentDescription = null,
                                 tint = internalAudioText,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Internal Audio",
+                                text = when (audioSource) {
+                                    "System" -> "Internal Audio"
+                                    "MicSystem" -> "Mic + Internal"
+                                    "None" -> "No Audio"
+                                    else -> "Microphone"
+                                },
                                 color = internalAudioText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -526,7 +586,7 @@ fun HomeScreen(
                     )
                 }
                 BouncyIconButton(
-                    onClick = { showSettingsSheet = true }
+                    onClick = onSettingsClick
                 ) {
                     Icon(
                         imageVector = Lucide.Settings,
@@ -550,7 +610,7 @@ fun HomeScreen(
                         .height(210.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Tall Record Card (2x height)
+                    // Standard MediaProjection Record Card (Full Left Height)
                     Card(
                         shape = RoundedCornerShape(28.dp),
                         colors = CardDefaults.cardColors(
@@ -582,19 +642,18 @@ fun HomeScreen(
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
-                            
                             Column {
                                 Text(
                                     text = if (isRecordingActive) "Recording" else "Record",
                                     color = Color.White,
-                                    fontSize = 24.sp,
+                                    fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (isRecordingActive) "Tap to stop" else "Tap to start",
                                     color = Color.White.copy(alpha = 0.7f),
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -609,25 +668,6 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         // Storage Card
-                        val freeSpaceGB = remember {
-                            try {
-                                val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
-                                (stat.blockSizeLong * stat.availableBlocksLong) / (1024 * 1024 * 1024)
-                            } catch (_: Exception) {
-                                42L
-                            }
-                        }
-                        val usedPercent = remember {
-                            try {
-                                val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
-                                val total = stat.blockSizeLong * stat.blockCountLong
-                                val free = stat.blockSizeLong * stat.availableBlocksLong
-                                if (total > 0) (((total - free) * 100) / total).toInt() else 24
-                            } catch (_: Exception) {
-                                24
-                            }
-                        }
-
                         Card(
                             shape = RoundedCornerShape(24.dp),
                             colors = CardDefaults.cardColors(
@@ -636,6 +676,7 @@ fun HomeScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
+                                .bouncyClickable { onSettingsClick() }
                         ) {
                             Column(
                                 modifier = Modifier
@@ -653,28 +694,32 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .size(28.dp)
                                             .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .background(
+                                                if (freeSpaceGB < 2) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                                                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                            )
                                     ) {
                                         Icon(
                                             imageVector = Lucide.HardDrive,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            tint = if (freeSpaceGB < 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
                                     
-                                    // Badge
+                                    // Badge: Indicates Safe Stop protection
                                     Box(
                                         modifier = Modifier
                                             .background(
-                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                                                color = if (safeStorageStop) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                                else MaterialTheme.colorScheme.surfaceVariant,
                                                 shape = RoundedCornerShape(6.dp)
                                             )
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = "$usedPercent% Used",
-                                            color = MaterialTheme.colorScheme.primary,
+                                            text = if (safeStorageStop) "Safe Stop Active" else "$usedPercent% Used",
+                                            color = if (safeStorageStop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -689,7 +734,7 @@ fun HomeScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = "Available Space",
+                                        text = if (safeStorageStop) "Auto-stop safeguard on" else "Available Space",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 10.sp
                                     )
@@ -722,7 +767,11 @@ fun HomeScreen(
                                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
                                 ) {
                                     Icon(
-                                        imageVector = if (audioSource == "System") Lucide.Volume2 else Lucide.Mic,
+                                        imageVector = when (audioSource) {
+                                            "System", "MicSystem" -> Lucide.Volume2
+                                            "None" -> Lucide.VolumeX
+                                            else -> Lucide.Mic
+                                        },
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(16.dp)
@@ -731,7 +780,12 @@ fun HomeScreen(
                                 
                                 Column {
                                     Text(
-                                        text = if (audioSource == "System") "Internal Audio" else "Microphone Only",
+                                        text = when (audioSource) {
+                                            "System" -> "Internal Audio"
+                                            "MicSystem" -> "Mic + Internal"
+                                            "None" -> "No Audio"
+                                            else -> "Microphone Only"
+                                        },
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
@@ -856,6 +910,145 @@ fun HomeScreen(
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Row 3: Full Width ADB Record Card (only when ADB switch is enabled)
+                if (adbEnabled) {
+                    val isAdbRecordingActual by com.gxdevs.screenx.service.AdbRecordService.isRecordingFlow.collectAsState()
+                    var isAdbStarting by remember { mutableStateOf(false) }
+                    LaunchedEffect(isAdbRecordingActual) {
+                        isAdbStarting = false
+                    }
+                    val isAdbRecording = isAdbRecordingActual || isAdbStarting
+                    Card(
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isAdbRecording)
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+                            else
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(76.dp)
+                            .bouncyClickable {
+                                if (!isAdbRecordingActual) {
+                                    if (!adbPaired) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Wireless ADB is not paired. Please pair ADB first.",
+                                            android.widget.Toast.LENGTH_LONG
+                                        ).show()
+                                        showAdbPairingDialog = true
+                                        return@bouncyClickable
+                                    }
+                                    isAdbStarting = true
+                                }
+                                onAdbRecordClick()
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(13.dp))
+                                    .background(
+                                        if (isAdbRecording)
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                        else
+                                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Lucide.Zap,
+                                    contentDescription = null,
+                                    tint = if (isAdbRecording)
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = if (isAdbRecording) "ADB Recording Active" else "Stealth ADB Record",
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isAdbRecording)
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                        else if (adbPaired)
+                                            Color(0xFF2E9E5B).copy(alpha = 0.15f)
+                                        else
+                                            MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+                                    ) {
+                                        Text(
+                                            text = if (isAdbRecording) "REC"
+                                            else if (adbPaired) "Ready"
+                                            else "Pair Required",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isAdbRecording)
+                                                MaterialTheme.colorScheme.error
+                                            else if (adbPaired)
+                                                Color(0xFF2E9E5B)
+                                            else
+                                                MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isAdbRecording) "Tap to stop recording session"
+                                    else "Undetectable capture • Bypasses app detection",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                                    .bouncyClickable { showAdbLimitationsDialog = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Lucide.Info,
+                                    contentDescription = "ADB Information",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }
@@ -1021,260 +1214,13 @@ fun HomeScreen(
         }
     }
 
-    // Modal Settings Bottom Sheet (styled beige/teal)
-    if (showSettingsSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSettingsSheet = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.background, // E4DDD3
-            dragHandle = null
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp)
-                    .navigationBarsPadding()
-            ) {
-                // Bottom sheet header
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "Settings",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        BouncyIconButton(
-                            onClick = {
-                                coroutineScope.launch { sheetState.hide() }.invokeOnCompletion {
-                                    if (!sheetState.isVisible) showSettingsSheet = false
-                                }
-                            },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Lucide.X,
-                                contentDescription = "Close settings",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-
-                // Block 1: Video Parameters
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-                            BottomSheetMenuItem(
-                                title = "Resolution",
-                                value = resolution,
-                                onClick = { showResDialog = true }
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            BottomSheetMenuItem(
-                                title = "Bitrate",
-                                value = "${bitrate / 1000000} Mbps",
-                                onClick = { showBitrateDialog = true }
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            BottomSheetMenuItem(
-                                title = "Frame Rate",
-                                value = "$fps FPS",
-                                onClick = { showFpsDialog = true }
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-
-                // Block 2: Audio & Storage
-                item {
-                    BottomSheetSectionHeader("AUDIO & STORAGE")
-                }
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-                            BottomSheetMenuItem(
-                                        title = "Audio Source",
-                                        value = when (audioSource) {
-                                            "Mic" -> "Microphone Only"
-                                            "System" -> "Internal Audio Only"
-                                            else -> "Microphone Only"
-                                        },
-                                        onClick = { showAudioDialog = true }
-                                    )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            BottomSheetMenuItem(
-                                title = "Save Location",
-                                value = "Internal Storage",
-                                onClick = {
-                                    Toast.makeText(context, "Location locked to standard Movies/ScreenX", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-
-                // Block 3: Control Options
-                item {
-                    BottomSheetSectionHeader("CONTROL OPTIONS")
-                }
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column {
-
-                            BottomSheetMenuItem(
-                                title = "Shake to Stop",
-                                value = if (shakeToStop) "On" else "Off",
-                                onClick = {
-                                    coroutineScope.launch { settingsManager.setShakeToStop(!shakeToStop) }
-                                }
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            BottomSheetMenuItem(
-                                title = "Countdown",
-                                value = if (countdown == 0) "Off" else "${countdown}s",
-                                onClick = { showCountdownDialog = true }
-                            )
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
-                            val floatingBallSummary = when {
-                                !showFloating -> "Hidden all the time"
-                                floatingShowMode.startsWith("All the time") -> "All the time (shortcut)"
-                                else -> "Only while recording"
-                            }
-                            BottomSheetMenuItem(
-                                title = "Floating Control Ball",
-                                value = floatingBallSummary,
-                                onClick = { showFloatingShowModeDialog = true }
-                            )
-                        }
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-
-                // Block 4: Theme Configuration
-                item {
-                    BottomSheetSectionHeader("THEME SELECTION")
-                }
-                item { Spacer(modifier = Modifier.height(8.dp)) }
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val themeSummary = when (themeMode) {
-                            "dark" -> "Dark Mode"
-                            "light" -> "Light Mode"
-                            "system" -> "System Default"
-                            "dynamic" -> "Dynamic Wallpaper"
-                            else -> "System Default"
-                        }
-                        BottomSheetMenuItem(
-                            title = "App Theme",
-                            value = themeSummary,
-                            onClick = { showThemeDialog = true }
-                        )
-                    }
-                }
-
-                item { Spacer(modifier = Modifier.height(24.dp)) }
-            }
-        }
-    }
-
-    if (showThemeDialog) {
-        val mapping = mapOf(
-            "light" to "Light Mode",
-            "dark" to "Dark Mode",
-            "system" to "System Default",
-            "dynamic" to "Dynamic Wallpaper"
-        )
-        OptionSelectionDialog(
-            title = "Select App Theme",
-            options = mapping.values.toList(),
-            selectedOption = mapping[themeMode] ?: "System Default",
-            onDismiss = { showThemeDialog = false },
-            onSelect = { displayName ->
-                val key = mapping.entries.firstOrNull { it.value == displayName }?.key ?: "system"
-                coroutineScope.launch { settingsManager.setThemeMode(key) }
-                showThemeDialog = false
-            }
-        )
-    }
-
-    // Dialog sheets inside Bottom Sheet
-    if (showResDialog) {
-        OptionSelectionDialog(
-            title = "Select Resolution",
-            options = DeviceCapabilitiesHelper.getResolutionOptions(context),
-            selectedOption = resolution,
-            onDismiss = { showResDialog = false },
-            onSelect = {
-                coroutineScope.launch { settingsManager.setResolution(it) }
-                showResDialog = false
-            }
-        )
-    }
-
-    if (showFpsDialog) {
-        OptionSelectionDialog(
-            title = "Select Frame Rate",
-            options = DeviceCapabilitiesHelper.getFpsOptions(context),
-            selectedOption = fps.toString(),
-            onDismiss = { showFpsDialog = false },
-            onSelect = {
-                coroutineScope.launch { settingsManager.setFps(it.toInt()) }
-                showFpsDialog = false
-            }
-        )
-    }
-
-    if (showBitrateDialog) {
-        val options = DeviceCapabilitiesHelper.getBitrateOptions()
-        val selectedString = "${bitrate / 1000000} Mbps"
-        OptionSelectionDialog(
-            title = "Select Bitrate",
-            options = options,
-            selectedOption = selectedString,
-            onDismiss = { showBitrateDialog = false },
-            onSelect = {
-                val value = it.substringBefore(" Mbps").toInt() * 1000000
-                coroutineScope.launch { settingsManager.setBitrate(value) }
-                showBitrateDialog = false
-            }
-        )
-    }
-
     if (showAudioDialog) {
-        val mapping = mapOf("Mic" to "Microphone Only", "System" to "Internal Audio Only")
+        val mapping = linkedMapOf(
+            "Mic" to "Microphone Only",
+            "System" to "Internal Audio Only",
+            "MicSystem" to "Mic + Internal Audio (Mixed)",
+            "None" to "No Audio (Muted)"
+        )
         val options = mapping.values.toList()
         val selectedOption = mapping[audioSource] ?: "Microphone Only"
         OptionSelectionDialog(
@@ -1290,66 +1236,14 @@ fun HomeScreen(
         )
     }
 
-    if (showCountdownDialog) {
-        val mapping = mapOf("0" to "Off", "3" to "3s", "5" to "5s", "10" to "10s")
-        val options = mapping.values.toList()
-        val selectedOption = mapping[countdown.toString()] ?: "3s"
-        OptionSelectionDialog(
-            title = "Select Countdown",
-            options = options,
-            selectedOption = selectedOption,
-            onDismiss = { showCountdownDialog = false },
-            onSelect = { displayName ->
-                val key = mapping.entries.firstOrNull { it.value == displayName }?.key ?: "3"
-                coroutineScope.launch { settingsManager.setCountdown(key.toInt()) }
-                showCountdownDialog = false
-            }
-        )
+    if (showAdbLimitationsDialog) {
+        AdbLimitationsDialog(onDismiss = { showAdbLimitationsDialog = false })
     }
 
-    if (showFloatingShowModeDialog) {
-        val options = listOf("Hide all the time", "Only while recording", "All the time (shortcut)")
-        val currentSelected = when {
-            !showFloating -> "Hide all the time"
-            floatingShowMode.startsWith("All the time") -> "All the time (shortcut)"
-            else -> "Only while recording"
-        }
-        OptionSelectionDialog(
-            title = "Floating Control Ball",
-            options = options,
-            selectedOption = currentSelected,
-            onDismiss = { showFloatingShowModeDialog = false },
-            onSelect = { selected ->
-                coroutineScope.launch {
-                    val intent = Intent(context, com.gxdevs.screenx.service.ScreenRecordService::class.java)
-                    when (selected) {
-                        "Hide all the time" -> {
-                            settingsManager.setShowFloating(false)
-                            if (!com.gxdevs.screenx.service.ScreenRecordService.isRecording) {
-                                intent.action = com.gxdevs.screenx.service.ScreenRecordService.ACTION_EXIT
-                                context.startService(intent)
-                            }
-                        }
-                        "Only while recording" -> {
-                            settingsManager.setShowFloating(true)
-                            settingsManager.setFloatingShowMode("Only while recording")
-                            if (!com.gxdevs.screenx.service.ScreenRecordService.isRecording) {
-                                intent.action = com.gxdevs.screenx.service.ScreenRecordService.ACTION_EXIT
-                                context.startService(intent)
-                            }
-                        }
-                        "All the time (shortcut)" -> {
-                            settingsManager.setShowFloating(true)
-                            settingsManager.setFloatingShowMode("All the time")
-                            if (!com.gxdevs.screenx.service.ScreenRecordService.isRecording) {
-                                intent.action = com.gxdevs.screenx.service.ScreenRecordService.ACTION_START_FLOATING_ONLY
-                                context.startForegroundService(intent)
-                            }
-                        }
-                    }
-                }
-                showFloatingShowModeDialog = false
-            }
+    if (showAdbPairingDialog) {
+        AdbPairingDialog(
+            settingsManager = settingsManager,
+            onDismiss = { showAdbPairingDialog = false }
         )
     }
 
@@ -1538,14 +1432,284 @@ fun RecentVideoCard(
 }
 
 @Composable
-fun BottomSheetSectionHeader(title: String) {
+fun OrionSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier
+) {
     Text(
         text = title,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Black,
-        color = MaterialTheme.colorScheme.primary, // Teal
-        modifier = Modifier.padding(start = 16.dp, top = 8.dp)
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.2.sp,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = modifier.padding(start = 16.dp, top = 6.dp, bottom = 4.dp)
     )
+}
+
+@Composable
+fun OrionStackedGroupCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)),
+        modifier = modifier.fillMaxWidth(),
+        content = {
+            Column(content = content)
+        }
+    )
+}
+
+@Composable
+fun OrionSettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(start = 72.dp, end = 18.dp),
+        thickness = 0.8.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    )
+}
+
+@Composable
+fun OrionSettingsSwitchItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(iconBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!subtitle.isNullOrEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+    }
+}
+
+@Composable
+fun OrionSettingsValueItem(
+    icon: ImageVector,
+    title: String,
+    value: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+    showChevron: Boolean = true
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(iconBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.widthIn(max = 130.dp)
+            ) {
+                Text(
+                    text = value,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
+            if (showChevron) {
+                Icon(
+                    imageVector = Lucide.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun OrionSettingsInfoItem(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    badge: String? = null,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.primary,
+    iconBackground: Color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(iconBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp
+            )
+        }
+
+        if (badge != null) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+            ) {
+                Text(
+                    text = badge,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun BottomSheetSectionHeader(title: String) {
+    OrionSectionHeader(title = title)
 }
 
 @Composable
@@ -1554,30 +1718,12 @@ fun BottomSheetMenuItem(
     value: String,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = title,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1.1f)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary, // Teal value
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(0.9f)
-        )
-    }
+    OrionSettingsValueItem(
+        icon = Lucide.Settings,
+        title = title,
+        value = value,
+        onClick = onClick
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1777,6 +1923,732 @@ fun RecentThumbnailItem(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+// ─── ADB Pairing Setup Dialog ────────────────────────────────────────────────
+
+@Composable
+fun AdbPairingDialog(
+    settingsManager: SettingsManager,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val isPaired by settingsManager.adbPairedFlow.collectAsState(initial = false)
+
+    // Detect device Wi-Fi IP (critical for Samsung / One UI)
+    val detectedIp = remember { NetworkUtils.getLocalIpAddress(context) ?: "192.168.1.9" }
+
+    // 0 = Notification Pairing (Recommended), 1 = Manual Entry
+    var selectedTab by remember { mutableStateOf(if (isPaired) 1 else 0) }
+    var serviceStarted by remember { mutableStateOf(false) }
+
+    // Manual pairing fields (prefill with detected local device IP)
+    var pairingHost by remember { mutableStateOf(detectedIp) }
+    var pairingPort by remember { mutableStateOf("") }
+    var pairingCode by remember { mutableStateOf("") }
+    var connectionPort by remember { mutableStateOf("") }
+
+    var isWorking by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf("") }
+    var successMsg by remember { mutableStateOf(if (isPaired && AdbManager.isConnected) "Connected and ready!" else "") }
+
+    fun launchServiceAndSettings() {
+        try {
+            val serviceIntent = Intent(context, PairingInputService::class.java)
+            ContextCompat.startForegroundService(context, serviceIntent)
+            serviceStarted = true
+
+            // Launch Developer Options
+            val settingsIntent = Intent("android.settings.APPLICATION_DEVELOPMENT_SETTINGS")
+            try {
+                context.startActivity(settingsIntent)
+            } catch (_: Exception) {
+                context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+            }
+        } catch (e: Exception) {
+            errorMsg = "Could not start pairing service: ${e.message}"
+        }
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchServiceAndSettings()
+        } else {
+            errorMsg = "Notification permission is needed to enter the 6-digit code via notification reply."
+        }
+    }
+
+    Dialog(
+        onDismissRequest = { if (!isWorking) onDismiss() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth(0.94f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(22.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (AdbManager.isConnected)
+                                    Color(0xFF2E9E5B).copy(alpha = 0.18f)
+                                else
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = if (AdbManager.isConnected) Lucide.Shield else Lucide.Usb,
+                            contentDescription = null,
+                            tint = if (AdbManager.isConnected) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Wireless ADB Setup",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = (-0.4).sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            if (AdbManager.isConnected) "Status: Connected & Ready"
+                            else if (isPaired) "Status: Paired (Needs Connect)"
+                            else "One-time wireless pairing",
+                            fontSize = 12.sp,
+                            color = if (AdbManager.isConnected) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Tab Switcher: Notification vs Manual
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (selectedTab == 0) MaterialTheme.colorScheme.surface else Color.Transparent,
+                        tonalElevation = if (selectedTab == 0) 3.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedTab = 0 }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                "Quick Notification",
+                                fontSize = 12.sp,
+                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (selectedTab == 1) MaterialTheme.colorScheme.surface else Color.Transparent,
+                        tonalElevation = if (selectedTab == 1) 3.dp else 0.dp,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedTab = 1 }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                "Manual / Port Entry",
+                                fontSize = 12.sp,
+                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                // Tab 0: Quick Notification Pairing
+                if (selectedTab == 0) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "Pair easily using Android's notification reply:",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        AdbSetupStep(
+                            number = "1",
+                            text = "Tap 'Start Pairing Helper' below. ScreenX opens Developer Options."
+                        )
+                        AdbSetupStep(
+                            number = "2",
+                            text = "Enable Wireless Debugging, then tap 'Pair device with pairing code'."
+                        )
+                        AdbSetupStep(
+                            number = "3",
+                            text = "Pull down your notification bar, tap Reply on ScreenX's notification, type the 6-digit code, and tap Send."
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = {
+                                errorMsg = ""
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                } else {
+                                    launchServiceAndSettings()
+                                }
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Lucide.Zap, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Start Pairing Helper", fontWeight = FontWeight.Bold)
+                        }
+
+                        if (serviceStarted) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "Listening for pairing dialog…",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            "Tap 'Pair device with pairing code' in Wireless debugging",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            context.stopService(Intent(context, PairingInputService::class.java))
+                                            serviceStarted = false
+                                        }
+                                    ) {
+                                        Text("Stop", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Tab 1: Manual Entry
+                if (selectedTab == 1) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(
+                            onClick = {
+                                val intent = Intent("android.settings.APPLICATION_DEVELOPMENT_SETTINGS")
+                                try { context.startActivity(intent) } catch (_: Exception) {
+                                    context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                                }
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Icon(Lucide.Settings, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Open Developer Settings", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+
+                        // Step 1: Pair
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Step 1: Pair with Device",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "From Wireless Debugging → 'Pair device with pairing code':\n(Tip: Keep dialog open via Split-Screen so the port stays active)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    lineHeight = 15.sp
+                                )
+
+                                OutlinedTextField(
+                                    value = pairingHost,
+                                    onValueChange = { v -> pairingHost = v },
+                                    label = { Text("Device IP Address", fontSize = 11.sp) },
+                                    placeholder = { Text(detectedIp, fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedTextField(
+                                        value = pairingPort,
+                                        onValueChange = { v -> pairingPort = v.filter(Char::isDigit).take(5) },
+                                        label = { Text("Pairing Port", fontSize = 11.sp) },
+                                        placeholder = { Text("e.g. 33625", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    OutlinedTextField(
+                                        value = pairingCode,
+                                        onValueChange = { v -> pairingCode = v.filter(Char::isDigit).take(6) },
+                                        label = { Text("6-digit Code", fontSize = 11.sp) },
+                                        placeholder = { Text("009154", fontSize = 11.sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                }
+
+                                Button(
+                                    onClick = {
+                                        errorMsg = ""
+                                        successMsg = ""
+                                        val port = pairingPort.toIntOrNull()
+                                        if (port == null || port !in 1..65535) {
+                                            errorMsg = "Enter a valid 5-digit pairing port"; return@Button
+                                        }
+                                        if (pairingCode.trim().length != 6) {
+                                            errorMsg = "Enter the 6-digit pairing code"; return@Button
+                                        }
+                                        isWorking = true
+                                        coroutineScope.launch {
+                                            val result = AdbManager.pair(
+                                                context = context,
+                                                pairingPort = port,
+                                                pairingCode = pairingCode.trim(),
+                                                host = pairingHost.trim().ifEmpty { null }
+                                            )
+                                            isWorking = false
+                                            result.onSuccess {
+                                                successMsg = "Pairing successful! Now connect below."
+                                                // Also attempt auto-connect immediately
+                                                AdbManager.connect(context, 0, pairingHost.trim().ifEmpty { null })
+                                            }.onFailure {
+                                                errorMsg = it.message ?: "Pairing failed"
+                                            }
+                                        }
+                                    },
+                                    enabled = !isWorking,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Pair Device", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // Step 2: Connect
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Step 2: Connect to Port",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "Main port shown on Wireless Debugging (e.g. 41927) or leave blank for Auto:",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                OutlinedTextField(
+                                    value = connectionPort,
+                                    onValueChange = { v -> connectionPort = v.filter(Char::isDigit).take(5) },
+                                    label = { Text("Connection Port (Optional)", fontSize = 11.sp) },
+                                    placeholder = { Text("e.g. 41927 or blank for auto", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+
+                                Button(
+                                    onClick = {
+                                        errorMsg = ""
+                                        successMsg = ""
+                                        val port = connectionPort.toIntOrNull() ?: 0
+                                        isWorking = true
+                                        coroutineScope.launch {
+                                            val result = AdbManager.connect(
+                                                context = context,
+                                                connectionPort = port,
+                                                host = pairingHost.trim().ifEmpty { null }
+                                            )
+                                            isWorking = false
+                                            result.onSuccess {
+                                                successMsg = "Connected! ADB recording is ready."
+                                            }.onFailure {
+                                                errorMsg = it.message ?: "Connection failed"
+                                            }
+                                        }
+                                    },
+                                    enabled = !isWorking,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Connect", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Error / Success Feedback
+                if (errorMsg.isNotEmpty()) {
+                    Text(
+                        errorMsg,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+
+                if (successMsg.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF2E9E5B).copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, Color(0xFF2E9E5B).copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Lucide.Shield,
+                                contentDescription = null,
+                                tint = Color(0xFF2E9E5B),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                successMsg,
+                                color = Color(0xFF2E9E5B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Bottom Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { if (!isWorking) onDismiss() }
+                    ) {
+                        Text(if (AdbManager.isConnected) "Done" else "Close")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdbSetupStep(number: String, text: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+        ) {
+            Text(number, fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.White)
+        }
+        Text(
+            text = text,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 18.sp,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+// ─── ADB Limitations Info Dialog ────────────────────────────────────────────
+
+@Composable
+fun AdbLimitationsDialog(
+    onDismiss: () -> Unit,
+    onConfirmEnable: (() -> Unit)? = null
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.93f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Title Row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
+                    ) {
+                        Icon(
+                            imageVector = Lucide.Zap,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = if (onConfirmEnable != null) "Enable ADB Recording" else "ADB Recording",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = (-0.5).sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (onConfirmEnable != null) "Please review important details" else "How it works & limitations",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Stealth badge
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF1A6B3C).copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Color(0xFF2E9E5B).copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.Shield,
+                            contentDescription = null,
+                            tint = Color(0xFF2E9E5B),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column {
+                            Text(
+                                text = "Fully Undetectable",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2E9E5B)
+                            )
+                            Text(
+                                text = "Apps like Snapchat, Instagram, and banking apps cannot detect ADB recording — it bypasses their screenshot/screen-record detection entirely.",
+                                fontSize = 12.sp,
+                                color = Color(0xFF2E9E5B).copy(alpha = 0.85f),
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
+
+                // Limitation items
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AdbLimitationRow(
+                        icon = Lucide.VolumeX,
+                        label = "No Audio Capture",
+                        detail = "ADB's screenrecord tool cannot capture microphone or system audio. Use MediaProjection mode if audio is needed.",
+                        isWarning = true
+                    )
+                    AdbLimitationRow(
+                        icon = Lucide.TriangleAlert,
+                        label = "3-Minute Segment Limit",
+                        detail = "Android's built-in screenrecord has a hard 3-minute maximum per session. ScreenX auto-restarts in segments to work around this. We're actively working on extending this limit — coming soon!",
+                        isWarning = true
+                    )
+                    AdbLimitationRow(
+                        icon = Lucide.Usb,
+                        label = "One-Time Wireless Pairing",
+                        detail = "ADB recording requires pairing ScreenX with itself once via Android's Wireless Debugging (Android 11+). After that, it works silently forever.",
+                        isWarning = false
+                    )
+                    AdbLimitationRow(
+                        icon = Lucide.Smartphone,
+                        label = "Android 11+ Required",
+                        detail = "Wireless ADB pairing (loopback) is only available on Android 11 (API 30) and above. Older devices fall back to MediaProjection automatically.",
+                        isWarning = false
+                    )
+                }
+
+                // Action buttons
+                if (onConfirmEnable != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = onDismiss,
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        ) {
+                            Text(
+                                "Cancel",
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = onConfirmEnable,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Text(
+                                "I Understand, Enable",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+                } else {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.align(Alignment.End),
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text(
+                            "Got it",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdbLimitationRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    detail: String,
+    isWarning: Boolean
+) {
+    val iconColor = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    val bgColor = if (isWarning)
+        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+    else
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(bgColor)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = detail,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 15.sp
+            )
         }
     }
 }
