@@ -599,26 +599,26 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                    .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Row 1: Tall Record Card + Right Column (Storage & Audio)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(204.dp),
+                        .height(216.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Standard MediaProjection Record Card (Full Left Height)
                     Card(
-                        shape = RoundedCornerShape(28.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surface
                         ),
                         border = BorderStroke(
                             1.dp,
                             if (isRecordingActive) MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -628,7 +628,7 @@ fun HomeScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(20.dp),
+                                .padding(16.dp),
                             verticalArrangement = Arrangement.SpaceBetween
                         ) {
                             // Record target icon at the top
@@ -646,15 +646,16 @@ fun HomeScreen(
                                     imageVector = Lucide.CircleDot,
                                     contentDescription = null,
                                     tint = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                             Column {
                                 Text(
                                     text = if (isRecordingActive) "Recording" else "Record",
                                     color = if (isRecordingActive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 24.sp
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
@@ -662,7 +663,8 @@ fun HomeScreen(
                                     color = if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.75f)
                                            else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    lineHeight = 14.sp
                                 )
                             }
                         }
@@ -673,15 +675,15 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         // Storage Card
                         Card(
-                            shape = RoundedCornerShape(24.dp),
+                            shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -690,7 +692,7 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(12.dp),
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(
@@ -701,7 +703,7 @@ fun HomeScreen(
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(28.dp)
+                                            .size(32.dp)
                                             .clip(CircleShape)
                                             .background(
                                                 if (freeSpaceGB < 2) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
@@ -727,10 +729,12 @@ fun HomeScreen(
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
                                         Text(
-                                            text = if (safeStorageStop) "Safe Stop Active" else "$usedPercent% Used",
+                                            text = if (safeStorageStop) "Safe Stop" else "$usedPercent% Used",
                                             color = if (safeStorageStop) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
                                 }
@@ -740,12 +744,17 @@ fun HomeScreen(
                                         text = "$freeSpaceGB GB",
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        lineHeight = 18.sp
                                     )
+                                    Spacer(modifier = Modifier.height(1.dp))
                                     Text(
-                                        text = if (safeStorageStop) "Auto-stop safeguard on" else "Available Space",
+                                        text = "Available Space",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 10.sp
+                                        fontSize = 10.sp,
+                                        lineHeight = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -753,11 +762,11 @@ fun HomeScreen(
 
                         // Audio Source Card
                         Card(
-                            shape = RoundedCornerShape(24.dp),
+                            shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -766,13 +775,13 @@ fun HomeScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(12.dp),
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
-                                        .size(28.dp)
+                                        .size(32.dp)
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
                                 ) {
@@ -797,15 +806,18 @@ fun HomeScreen(
                                             else -> "Microphone"
                                         },
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 13.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
+                                        lineHeight = 18.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    Spacer(modifier = Modifier.height(1.dp))
                                     Text(
                                         text = "Audio Source",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 10.sp
+                                        fontSize = 10.sp,
+                                        lineHeight = 12.sp
                                     )
                                 }
                             }
@@ -817,8 +829,8 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(68.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .height(76.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Resolution Card
                     Card(
@@ -826,7 +838,7 @@ fun HomeScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -843,28 +855,40 @@ fun HomeScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 12.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Lucide.Video,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            ) {
+                                Icon(
+                                    imageVector = Lucide.Video,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Column {
+                            Column(verticalArrangement = Arrangement.Center) {
                                 Text(
                                     text = "RESOLUTION",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 11.sp,
+                                    letterSpacing = 0.4.sp
                                 )
                                 Text(
                                     text = "$resolution / ${fps}fps",
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 11.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
+                                    lineHeight = 16.sp,
+                                    letterSpacing = (-0.4).sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -878,7 +902,7 @@ fun HomeScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -894,32 +918,44 @@ fun HomeScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 12.dp),
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = when (orientation) {
-                                    "Auto" -> Lucide.RotateCcw
-                                    "Portrait" -> Lucide.Smartphone
-                                    else -> Lucide.Tablet
-                                },
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            ) {
+                                Icon(
+                                    imageVector = when (orientation) {
+                                        "Auto" -> Lucide.RotateCcw
+                                        "Portrait" -> Lucide.Smartphone
+                                        else -> Lucide.Tablet
+                                    },
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                             Spacer(modifier = Modifier.width(8.dp))
-                            Column {
+                            Column(verticalArrangement = Arrangement.Center) {
                                 Text(
                                     text = "ORIENTATION",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 11.sp,
+                                    letterSpacing = 0.4.sp
                                 )
                                 Text(
-                                    text = if (orientation == "Auto") "Auto Rotation" else "$orientation Mode",
+                                    text = if (orientation == "Auto") "Auto Rotate" else "$orientation",
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 11.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
+                                    lineHeight = 16.sp,
+                                    letterSpacing = (-0.4).sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -937,7 +973,7 @@ fun HomeScreen(
                     }
                     val isAdbRecording = isAdbRecordingActual || isAdbStarting
                     Card(
-                        shape = RoundedCornerShape(24.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
@@ -946,7 +982,7 @@ fun HomeScreen(
                             if (isAdbRecording)
                                 MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
                             else
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -970,14 +1006,14 @@ fun HomeScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 16.dp),
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(13.dp))
+                                    .size(36.dp)
+                                    .clip(CircleShape)
                                     .background(
                                         if (isAdbRecording)
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
@@ -992,11 +1028,11 @@ fun HomeScreen(
                                         MaterialTheme.colorScheme.error
                                     else
                                         MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -1006,7 +1042,7 @@ fun HomeScreen(
                                     Text(
                                         text = if (isAdbRecording) "Stealth Recording Active" else "Stealth Recording",
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 15.sp,
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Surface(
@@ -1022,7 +1058,7 @@ fun HomeScreen(
                                             text = if (isAdbRecording) "REC"
                                             else if (adbPaired) "Ready"
                                             else "Pair Required",
-                                            fontSize = 10.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isAdbRecording)
                                                 MaterialTheme.colorScheme.error
@@ -1068,13 +1104,13 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Gallery / Recent Recordings Section
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 4.dp)
+                    .padding(horizontal = 20.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1083,26 +1119,26 @@ fun HomeScreen(
                 ) {
                     Text(
                         text = "Gallery",
-                        fontSize = 18.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
                         text = "View All",
                         color = MaterialTheme.colorScheme.primary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clickable {
                             onViewAllClick()
                         }
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 if (videos.isEmpty()) {
                     Card(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(20.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(76.dp)
@@ -1120,8 +1156,8 @@ fun HomeScreen(
                     }
                 } else {
                     LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(end = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(end = 10.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         items(videos, key = { it.id }) { video ->
@@ -1135,7 +1171,7 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Quick Tools Section
             Column(
@@ -1145,22 +1181,22 @@ fun HomeScreen(
             ) {
                 Text(
                     text = "Quick Tools",
-                    fontSize = 18.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 
                 // Trim Video Premium Card (sole quick tool)
                 Card(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
+                        .height(76.dp)
                         .bouncyClickable {
                             onTrimVideoClick()
                         }
@@ -1168,7 +1204,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -1178,7 +1214,7 @@ fun HomeScreen(
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
-                                    .size(48.dp)
+                                    .size(38.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
                             ) {
@@ -1186,22 +1222,24 @@ fun HomeScreen(
                                     imageVector = Lucide.Scissors,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.secondary,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(verticalArrangement = Arrangement.Center) {
                                 Text(
                                     text = "Trim Video",
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    lineHeight = 18.sp
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = "Edit your recent captures",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp
                                 )
                             }
                         }
@@ -1209,7 +1247,7 @@ fun HomeScreen(
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(32.dp)
                                 .clip(CircleShape)
                                 .background(MaterialTheme.colorScheme.primary)
                         ) {
@@ -1217,14 +1255,14 @@ fun HomeScreen(
                                 imageVector = Lucide.ChevronRight,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
@@ -1827,8 +1865,9 @@ fun RecentThumbnailItem(
     }
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
         modifier = Modifier
             .width(140.dp)
             .height(100.dp)
