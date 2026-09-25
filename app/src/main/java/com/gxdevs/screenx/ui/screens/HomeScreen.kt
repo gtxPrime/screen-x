@@ -281,7 +281,6 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -325,7 +324,7 @@ fun HomeScreen(
                                 .background(Color.Transparent)
                                 .border(
                                     width = 8.dp,
-                                    color = Color.White,
+                                    color = if (isRecordingActive) Color.White else MaterialTheme.colorScheme.onPrimary,
                                     shape = CircleShape
                                 )
                         )
@@ -559,29 +558,28 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .statusBarsPadding()
         ) {
             // Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.logo_no_bg),
                         contentDescription = null,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                     Text(
                         "ScreenX",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                         letterSpacing = (-0.5).sp
                     )
@@ -592,7 +590,7 @@ fun HomeScreen(
                     Icon(
                         imageVector = Lucide.Settings,
                         contentDescription = "Open Settings",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -601,15 +599,15 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // Row 1: Tall Record Card + Right Column (Storage & Audio)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(210.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .height(204.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Standard MediaProjection Record Card (Full Left Height)
                     Card(
@@ -620,7 +618,7 @@ fun HomeScreen(
                         border = BorderStroke(
                             1.dp,
                             if (isRecordingActive) MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -641,7 +639,7 @@ fun HomeScreen(
                                     .clip(CircleShape)
                                     .background(
                                         if (isRecordingActive) MaterialTheme.colorScheme.onError.copy(alpha = 0.2f)
-                                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+                                        else MaterialTheme.colorScheme.primaryContainer
                                     )
                             ) {
                                 Icon(
@@ -683,6 +681,7 @@ fun HomeScreen(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -706,13 +705,13 @@ fun HomeScreen(
                                             .clip(CircleShape)
                                             .background(
                                                 if (freeSpaceGB < 2) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                                                else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                                else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
                                             )
                                     ) {
                                         Icon(
                                             imageVector = Lucide.HardDrive,
                                             contentDescription = null,
-                                            tint = if (freeSpaceGB < 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                            tint = if (freeSpaceGB < 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -721,7 +720,7 @@ fun HomeScreen(
                                     Box(
                                         modifier = Modifier
                                             .background(
-                                                color = if (safeStorageStop) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                                color = if (safeStorageStop) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
                                                 else MaterialTheme.colorScheme.surfaceVariant,
                                                 shape = RoundedCornerShape(6.dp)
                                             )
@@ -729,7 +728,7 @@ fun HomeScreen(
                                     ) {
                                         Text(
                                             text = if (safeStorageStop) "Safe Stop Active" else "$usedPercent% Used",
-                                            color = if (safeStorageStop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            color = if (safeStorageStop) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -758,6 +757,7 @@ fun HomeScreen(
                             colors = CardDefaults.cardColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -774,7 +774,7 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .size(28.dp)
                                         .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
                                 ) {
                                     Icon(
                                         imageVector = when (audioSource) {
@@ -783,7 +783,7 @@ fun HomeScreen(
                                             else -> Lucide.Mic
                                         },
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = MaterialTheme.colorScheme.secondary,
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -794,10 +794,10 @@ fun HomeScreen(
                                             "System" -> "Internal Audio"
                                             "MicSystem" -> "Mic + Internal"
                                             "None" -> "No Audio"
-                                            else -> "Microphone Only"
+                                            else -> "Microphone"
                                         },
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        fontSize = 14.sp,
+                                        fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -826,6 +826,7 @@ fun HomeScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -877,6 +878,7 @@ fun HomeScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -1066,13 +1068,13 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Gallery / Recent Recordings Section
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 8.dp)
+                    .padding(horizontal = 20.dp, vertical = 4.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1100,9 +1102,10 @@ fun HomeScreen(
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(100.dp)
+                            .height(76.dp)
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -1110,7 +1113,7 @@ fun HomeScreen(
                         ) {
                             Text(
                                 text = "Recorded videos will appear here",
-                                fontSize = 14.sp,
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -1132,13 +1135,13 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Quick Tools Section
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = 20.dp)
             ) {
                 Text(
                     text = "Quick Tools",
@@ -1154,6 +1157,7 @@ fun HomeScreen(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(80.dp)
@@ -1176,12 +1180,12 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))
                             ) {
                                 Icon(
                                     imageVector = Lucide.Scissors,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
+                                    tint = MaterialTheme.colorScheme.secondary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -1207,12 +1211,12 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .background(MaterialTheme.colorScheme.primary)
                         ) {
                             Icon(
                                 imageVector = Lucide.ChevronRight,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
