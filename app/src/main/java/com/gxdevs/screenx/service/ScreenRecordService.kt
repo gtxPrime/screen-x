@@ -16,6 +16,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.Image
 import android.media.ImageReader
 import android.media.MediaRecorder
@@ -34,6 +36,7 @@ import android.os.Looper
 import android.os.StatFs
 import android.provider.MediaStore
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -46,6 +49,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +62,7 @@ import java.nio.ByteBuffer
 class ScreenRecordService : LifecycleService() {
 
     companion object {
+        private const val TAG = "ScreenRecordService"
         const val CHANNEL_ID = "ScreenX_Recording_Channel"
         const val NOTIFICATION_ID = 888
 
@@ -70,14 +76,36 @@ class ScreenRecordService : LifecycleService() {
         // Screenshot Action
         const val ACTION_SCREENSHOT = "com.gxdevs.screenx.action.SCREENSHOT"
         const val ACTION_START_FLOATING_ONLY = "com.gxdevs.screenx.action.START_FLOATING_ONLY"
+        const val ACTION_TOGGLE_MIC = "com.gxdevs.screenx.action.TOGGLE_MIC"
 
         // Intent Extras
         const val EXTRA_RESULT_CODE = "extra_result_code"
         const val EXTRA_RESULT_DATA = "extra_result_data"
 
+        private val _isRecordingFlow = MutableStateFlow(false)
+        val isRecordingFlow = _isRecordingFlow.asStateFlow()
+
         var isRecording = false
-            private set
+            private set(value) {
+                field = value
+                _isRecordingFlow.value = value
+            }
+
+        private val _isSavingFlow = MutableStateFlow(false)
+        val isSavingFlow = _isSavingFlow.asStateFlow()
+
+        var isSaving = false
+            private set(value) {
+                field = value
+                _isSavingFlow.value = value
+            }
         var isPaused = false
+            private set
+        var isMicMuted = false
+            private set
+        var recordingStartTimeMs: Long = 0
+            private set
+        var accumulatedDurationMs: Long = 0
             private set
     }
 
@@ -100,6 +128,25 @@ class ScreenRecordService : LifecycleService() {
     private var brushDrawingOverlay: BrushDrawingOverlay? = null
     private var countdownOverlay: CountdownOverlay? = null
     private var storageMonitorJob: Job? = null
+    private var originalMediaVolume: Int? = null
+
+    private fun isHeadsetConnected(): Boolean {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            devices.any { device ->
+                device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_USB_DEVICE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.isWiredHeadsetOn || audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn
+        }
+    }
 
     private fun getAvailableStorageBytes(): Long {
         var minFreeBytes = Long.MAX_VALUE
@@ -187,7 +234,12 @@ class ScreenRecordService : LifecycleService() {
         when (action) {
             ACTION_START -> {
                 val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
-                val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+                val resultData = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(EXTRA_RESULT_DATA)
+                }
                 if (resultData != null) {
                     startRecordingSequence(resultCode, resultData)
                 } else {
@@ -198,6 +250,7 @@ class ScreenRecordService : LifecycleService() {
             ACTION_RESUME -> resumeRecording()
             ACTION_STOP -> stopRecording()
             ACTION_SCREENSHOT -> takeScreenshot()
+            ACTION_TOGGLE_MIC -> toggleMicMute()
             ACTION_EXIT -> exitService()
             ACTION_START_FLOATING_ONLY -> {
                 val notification = createNotification("Floating controls active")
@@ -344,14 +397,9 @@ class ScreenRecordService : LifecycleService() {
     }
 
     private fun startRecording(resultCode: Int, resultData: Intent) {
-        try {
-            isRecording = true
-            isPaused = false
-            startTimeMs = System.currentTimeMillis()
-            updateNotification("Recording")
-
-            // Load settings
-            lifecycleScope.launch {
+        // Load settings and initiate hardware recording inside lifecycleScope
+        lifecycleScope.launch {
+            try {
                 val fps = settingsManager.fpsFlow.first()
                 val bitrate = settingsManager.bitrateFlow.first()
                 val audioSource = settingsManager.audioSourceFlow.first()
@@ -398,11 +446,47 @@ class ScreenRecordService : LifecycleService() {
                     if (tempAudioFile?.exists() == true) {
                         tempAudioFile?.delete()
                     }
+                    val voicePriority = settingsManager.voicePriorityFlow.first()
+                    val micVolPercent = settingsManager.micVolumeFlow.first()
+                    val intVolPercent = settingsManager.internalAudioVolumeFlow.first()
+                    val vocalClarity = settingsManager.vocalClarityFlow.first()
+
+                    val micGain = (micVolPercent.toFloat() / 100f).coerceIn(0.5f, 6.0f)
+                    val intRatio = (intVolPercent.toFloat() / 100f).coerceIn(0.01f, 1.0f)
+
+                    // Anti-Speaker-Bleed Optimization for Loudspeaker recording:
+                    // When recording Mic + Internal Audio without headphones, high physical speaker volume
+                    // bleeds directly into the microphone. Lowering physical media volume to a comfortable ~35%
+                    // prevents the mic from being overloaded by the speaker.
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    val hasHeadset = isHeadsetConnected()
+                    if (audioSource == "MicSystem" && !hasHeadset && audioManager != null) {
+                        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val safeVol = (maxVol * 0.35f).toInt().coerceAtLeast(3)
+                        if (currentVol > safeVol) {
+                            originalMediaVolume = currentVol
+                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, safeVol, 0)
+                            Log.d(TAG, "Loudspeaker dual recording: optimized speaker volume from $currentVol to $safeVol")
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    this@ScreenRecordService,
+                                    "Speaker volume lowered to prevent mic bleed. (Use earphones for best clarity)",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+
                     audioCaptureHelper = AudioCaptureHelper(
                         context = this@ScreenRecordService,
                         mediaProjection = mediaProjection,
                         audioSource = audioSource,
-                        outputFile = tempAudioFile!!
+                        outputFile = tempAudioFile!!,
+                        voicePriorityEnabled = voicePriority,
+                        micGainMultiplier = micGain,
+                        internalAudioVolumeRatio = intRatio,
+                        vocalClarityEnabled = vocalClarity
                     )
                     audioCaptureHelper?.start()
                 } else {
@@ -412,6 +496,7 @@ class ScreenRecordService : LifecycleService() {
 
                 // Metrics
                 val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
                 windowManager.defaultDisplay.getRealMetrics(metrics)
                 val screenWidth = metrics.widthPixels
                 val screenHeight = metrics.heightPixels
@@ -434,13 +519,21 @@ class ScreenRecordService : LifecycleService() {
 
                 // Start recording
                 mediaRecorder?.start()
+                isRecording = true
+                isPaused = false
+                isMicMuted = (audioSource == "System")
+                startTimeMs = System.currentTimeMillis()
+                recordingStartTimeMs = startTimeMs
+                recordingDurationMs = 0L
+                accumulatedDurationMs = 0L
+                updateNotification("Recording")
 
-                // Launch Safe Storage Auto-Stop monitor
+                // Launch Safe Storage Auto-Stop monitor (polling every 1000ms for safety)
                 if (safeStorageStop) {
                     storageMonitorJob?.cancel()
                     storageMonitorJob = lifecycleScope.launch {
                         while (isActive && isRecording) {
-                            delay(2500)
+                            delay(1000)
                             if (!isRecording) break
                             val freeBytes = getAvailableStorageBytes()
                             if (freeBytes < thresholdBytes) {
@@ -473,13 +566,14 @@ class ScreenRecordService : LifecycleService() {
                         SensorManager.SENSOR_DELAY_NORMAL
                     )
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this@ScreenRecordService, "Failed to start recording: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+                isRecording = false
+                stopSelf()
             }
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(this, "Failed to start recording: ${e.message}", Toast.LENGTH_LONG).show()
-            isRecording = false
-            stopSelf()
         }
     }
 
@@ -584,7 +678,9 @@ class ScreenRecordService : LifecycleService() {
                 mediaRecorder?.pause()
                 audioCaptureHelper?.pause()
                 isPaused = true
-                recordingDurationMs += System.currentTimeMillis() - startTimeMs
+                val segment = System.currentTimeMillis() - startTimeMs
+                recordingDurationMs += segment
+                accumulatedDurationMs = recordingDurationMs
                 updateNotification("Paused")
                 floatingControlOverlay?.updateState()
             } catch (e: Exception) {
@@ -600,6 +696,7 @@ class ScreenRecordService : LifecycleService() {
                 audioCaptureHelper?.resume()
                 isPaused = false
                 startTimeMs = System.currentTimeMillis()
+                recordingStartTimeMs = startTimeMs
                 updateNotification("Recording")
                 floatingControlOverlay?.updateState()
             } catch (e: Exception) {
@@ -608,8 +705,21 @@ class ScreenRecordService : LifecycleService() {
         }
     }
 
+    fun toggleMicMute(): Boolean {
+        val newMute = !isMicMuted
+        isMicMuted = newMute
+        audioCaptureHelper?.setMicMuted(newMute)
+        floatingControlOverlay?.updateState()
+        val msg = if (newMute) "Microphone muted" else "Microphone unmuted"
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+        return newMute
+    }
+
     private fun stopRecording(reason: String? = null) {
         if (!isRecording) return
+        val wasPaused = isPaused
         isRecording = false
         isPaused = false
         storageMonitorJob?.cancel()
@@ -621,9 +731,10 @@ class ScreenRecordService : LifecycleService() {
         // Dismiss brush overlay if active
         dismissBrushOverlay()
 
-        if (!isPaused) {
+        if (!wasPaused) {
             recordingDurationMs += System.currentTimeMillis() - startTimeMs
         }
+        accumulatedDurationMs = recordingDurationMs
 
         // Release hardware projection surfaces immediately
         virtualDisplay?.release()
@@ -657,6 +768,18 @@ class ScreenRecordService : LifecycleService() {
         tempVideoFile = null
         tempAudioFile = null
 
+        // Restore physical speaker volume if it was modified for dual recording
+        val savedOrigVol = originalMediaVolume
+        originalMediaVolume = null
+        if (savedOrigVol != null) {
+            try {
+                val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                am?.setStreamVolume(AudioManager.STREAM_MUSIC, savedOrigVol, 0)
+                Log.d(TAG, "Restored physical media volume to $savedOrigVol")
+            } catch (_: Exception) {}
+        }
+
+        isSaving = true
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 try {
@@ -707,6 +830,7 @@ class ScreenRecordService : LifecycleService() {
                     }
                 }
             } finally {
+                isSaving = false
                 withContext(Dispatchers.Main) {
                     val showFloating = settingsManager.showFloatingFlow.first()
                     val mode = settingsManager.floatingShowModeFlow.first()
@@ -725,88 +849,92 @@ class ScreenRecordService : LifecycleService() {
 
     private fun mergeVideoAndAudio(videoFile: File, audioFile: File, outputFile: File) {
         val extractorVideo = MediaExtractor()
-        extractorVideo.setDataSource(videoFile.absolutePath)
-        
         val extractorAudio = MediaExtractor()
-        extractorAudio.setDataSource(audioFile.absolutePath)
-        
-        val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-        
-        // Select video track
-        var videoTrackIndex = -1
-        for (i in 0 until extractorVideo.trackCount) {
-            val format = extractorVideo.getTrackFormat(i)
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-            if (mime.startsWith("video/")) {
-                extractorVideo.selectTrack(i)
-                videoTrackIndex = muxer.addTrack(format)
-                break
-            }
-        }
-        
-        // Select audio track
-        var audioTrackIndex = -1
-        for (i in 0 until extractorAudio.trackCount) {
-            val format = extractorAudio.getTrackFormat(i)
-            val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-            if (mime.startsWith("audio/")) {
-                extractorAudio.selectTrack(i)
-                audioTrackIndex = muxer.addTrack(format)
-                break
-            }
-        }
-        
-        muxer.start()
-        
-        val bufferSize = 1024 * 1024
-        val buffer = ByteBuffer.allocate(bufferSize)
-        val bufferInfo = MediaCodec.BufferInfo()
-        
-        // Interleave video and audio tracks chronologically
-        var videoDone = videoTrackIndex == -1
-        var audioDone = audioTrackIndex == -1
+        var muxer: MediaMuxer? = null
 
-        while (!videoDone || !audioDone) {
-            val videoTime = if (!videoDone) extractorVideo.sampleTime else Long.MAX_VALUE
-            val audioTime = if (!audioDone) extractorAudio.sampleTime else Long.MAX_VALUE
-
-            if (!videoDone && (audioDone || videoTime <= audioTime)) {
-                bufferInfo.offset = 0
-                bufferInfo.size = extractorVideo.readSampleData(buffer, 0)
-                if (bufferInfo.size < 0) {
-                    videoDone = true
-                } else {
-                    bufferInfo.presentationTimeUs = videoTime
-                    bufferInfo.flags = extractorVideo.sampleFlags
-                    muxer.writeSampleData(videoTrackIndex, buffer, bufferInfo)
-                    extractorVideo.advance()
-                }
-            } else if (!audioDone) {
-                bufferInfo.offset = 0
-                bufferInfo.size = extractorAudio.readSampleData(buffer, 0)
-                if (bufferInfo.size < 0) {
-                    audioDone = true
-                } else {
-                    bufferInfo.presentationTimeUs = audioTime
-                    bufferInfo.flags = extractorAudio.sampleFlags
-                    muxer.writeSampleData(audioTrackIndex, buffer, bufferInfo)
-                    extractorAudio.advance()
+        try {
+            extractorVideo.setDataSource(videoFile.absolutePath)
+            extractorAudio.setDataSource(audioFile.absolutePath)
+            val m = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            muxer = m
+            
+            // Select video track
+            var videoTrackIndex = -1
+            for (i in 0 until extractorVideo.trackCount) {
+                val format = extractorVideo.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/")) {
+                    extractorVideo.selectTrack(i)
+                    videoTrackIndex = m.addTrack(format)
+                    break
                 }
             }
+            
+            // Select audio track
+            var audioTrackIndex = -1
+            for (i in 0 until extractorAudio.trackCount) {
+                val format = extractorAudio.getTrackFormat(i)
+                val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    extractorAudio.selectTrack(i)
+                    audioTrackIndex = m.addTrack(format)
+                    break
+                }
+            }
+            
+            m.start()
+            
+            val bufferSize = 1024 * 1024
+            val buffer = ByteBuffer.allocate(bufferSize)
+            val bufferInfo = MediaCodec.BufferInfo()
+            
+            // Interleave video and audio tracks chronologically
+            var videoDone = videoTrackIndex == -1
+            var audioDone = audioTrackIndex == -1
+
+            while (!videoDone || !audioDone) {
+                val videoTime = if (!videoDone) extractorVideo.sampleTime else Long.MAX_VALUE
+                val audioTime = if (!audioDone) extractorAudio.sampleTime else Long.MAX_VALUE
+
+                if (!videoDone && (audioDone || videoTime <= audioTime)) {
+                    bufferInfo.offset = 0
+                    bufferInfo.size = extractorVideo.readSampleData(buffer, 0)
+                    if (bufferInfo.size < 0) {
+                        videoDone = true
+                    } else {
+                        bufferInfo.presentationTimeUs = videoTime
+                        bufferInfo.flags = extractorVideo.sampleFlags
+                        m.writeSampleData(videoTrackIndex, buffer, bufferInfo)
+                        extractorVideo.advance()
+                    }
+                } else if (!audioDone) {
+                    bufferInfo.offset = 0
+                    bufferInfo.size = extractorAudio.readSampleData(buffer, 0)
+                    if (bufferInfo.size < 0) {
+                        audioDone = true
+                    } else {
+                        bufferInfo.presentationTimeUs = audioTime
+                        bufferInfo.flags = extractorAudio.sampleFlags
+                        m.writeSampleData(audioTrackIndex, buffer, bufferInfo)
+                        extractorAudio.advance()
+                    }
+                }
+            }
+            
+            try {
+                m.stop()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } finally {
+            try {
+                muxer?.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            try { extractorVideo.release() } catch (_: Exception) {}
+            try { extractorAudio.release() } catch (_: Exception) {}
         }
-        
-        try {
-            muxer.stop()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        try {
-            muxer.release()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        extractorVideo.release()
-        extractorAudio.release()
     }
 
     private fun saveVideoToMediaStore(tempFile: File, resolution: String, durationMs: Long) {
@@ -842,7 +970,9 @@ class ScreenRecordService : LifecycleService() {
                     put(MediaStore.Video.Media.SIZE, tempFile.length())
                 }
                 resolver.update(videoUri, updateValues, null, null)
-                sendBroadcast(Intent("com.gxdevs.screenx.action.RECORDING_SAVED"))
+                sendBroadcast(Intent("com.gxdevs.screenx.action.RECORDING_SAVED").apply {
+                    setPackage(packageName)
+                })
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -936,6 +1066,12 @@ class ScreenRecordService : LifecycleService() {
             try {
                 resolver.openOutputStream(imageUri)?.use { outputStream ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                }
+                sendBroadcast(Intent("com.gxdevs.screenx.action.RECORDING_SAVED").apply {
+                    setPackage(packageName)
+                })
+                Handler(Looper.getMainLooper()).post {
+                    Toast.makeText(this@ScreenRecordService, "Screenshot saved to Pictures/ScreenX ✓", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()

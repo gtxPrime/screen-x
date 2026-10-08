@@ -27,6 +27,11 @@ class SettingsManager(private val context: Context) {
         val KEY_GALLERY_GRID_VIEW = booleanPreferencesKey("gallery_grid_view")
         val KEY_SAFE_STORAGE_STOP = booleanPreferencesKey("safe_storage_stop")
         val KEY_SAFE_STORAGE_THRESHOLD_MB = intPreferencesKey("safe_storage_threshold_mb")
+        // Dual audio ducking & gain staging keys
+        val KEY_VOICE_PRIORITY = booleanPreferencesKey("voice_priority")
+        val KEY_MIC_VOLUME = intPreferencesKey("mic_volume_percent")
+        val KEY_INTERNAL_AUDIO_VOLUME = intPreferencesKey("internal_volume_percent")
+        val KEY_VOCAL_CLARITY = booleanPreferencesKey("vocal_clarity_filter")
         // ADB capture: "mediaprojection" | "adb" | "ask"
         val KEY_ADB_CAPTURE_MODE = stringPreferencesKey("adb_capture_mode")
         val KEY_ADB_ENABLED      = booleanPreferencesKey("adb_enabled")
@@ -97,6 +102,22 @@ class SettingsManager(private val context: Context) {
 
     val safeStorageThresholdMbFlow: Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[KEY_SAFE_STORAGE_THRESHOLD_MB] ?: 150
+    }
+
+    val voicePriorityFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_VOICE_PRIORITY] ?: true
+    }
+
+    val micVolumeFlow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[KEY_MIC_VOLUME] ?: 350
+    }
+
+    val internalAudioVolumeFlow: Flow<Int> = context.dataStore.data.map { preferences ->
+        preferences[KEY_INTERNAL_AUDIO_VOLUME] ?: 35
+    }
+
+    val vocalClarityFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_VOCAL_CLARITY] ?: true
     }
 
     /** "mediaprojection" | "adb" | "ask" — default is MediaProjection (standard) */
@@ -215,6 +236,30 @@ class SettingsManager(private val context: Context) {
     suspend fun setSafeStorageThresholdMb(thresholdMb: Int) {
         context.dataStore.edit { preferences ->
             preferences[KEY_SAFE_STORAGE_THRESHOLD_MB] = thresholdMb
+        }
+    }
+
+    suspend fun setVoicePriority(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_VOICE_PRIORITY] = enabled
+        }
+    }
+
+    suspend fun setMicVolume(percent: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_MIC_VOLUME] = percent
+        }
+    }
+
+    suspend fun setInternalAudioVolume(percent: Int) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_INTERNAL_AUDIO_VOLUME] = percent
+        }
+    }
+
+    suspend fun setVocalClarity(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_VOCAL_CLARITY] = enabled
         }
     }
 

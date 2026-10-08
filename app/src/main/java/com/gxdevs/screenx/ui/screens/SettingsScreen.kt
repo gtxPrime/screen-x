@@ -115,6 +115,10 @@ fun SettingsScreen(
     val fps by settingsManager.fpsFlow.collectAsState(initial = 30)
     val bitrate by settingsManager.bitrateFlow.collectAsState(initial = 8000000)
     val audioSource by settingsManager.audioSourceFlow.collectAsState(initial = "Mic")
+    val voicePriority by settingsManager.voicePriorityFlow.collectAsState(initial = true)
+    val micVolume by settingsManager.micVolumeFlow.collectAsState(initial = 200)
+    val internalAudioVolume by settingsManager.internalAudioVolumeFlow.collectAsState(initial = 80)
+    val vocalClarity by settingsManager.vocalClarityFlow.collectAsState(initial = true)
     val countdown by settingsManager.countdownFlow.collectAsState(initial = 3)
     val showFloating by settingsManager.showFloatingFlow.collectAsState(initial = true)
     val themeMode by settingsManager.themeModeFlow.collectAsState(initial = "system")
@@ -140,6 +144,8 @@ fun SettingsScreen(
     var showFpsDialog by remember { mutableStateOf(false) }
     var showBitrateDialog by remember { mutableStateOf(false) }
     var showAudioDialog by remember { mutableStateOf(false) }
+    var showMicVolumeDialog by remember { mutableStateOf(false) }
+    var showInternalVolumeDialog by remember { mutableStateOf(false) }
     var showCountdownDialog by remember { mutableStateOf(false) }
     var showFloatingShowModeDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -329,10 +335,10 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. AUDIO
+            // 3. AUDIO & VOICE PRIORITY
             item {
                 Column {
-                    OrionSectionHeader("AUDIO SOURCE")
+                    OrionSectionHeader("AUDIO & VOICE PRIORITY")
                     OrionStackedGroupCard {
                         val audioSubtitle = if (isAdbRecordingDefault) {
                             "Locked to No Audio during Stealth recording"
@@ -340,7 +346,7 @@ fun SettingsScreen(
                             when (audioSource) {
                                 "Mic" -> "Microphone voice capture"
                                 "System" -> "Internal device audio"
-                                "MicSystem" -> "Mic and internal audio"
+                                "MicSystem" -> "Mic and internal audio with ducking"
                                 "None" -> "Muted audio track"
                                 else -> "Microphone voice capture"
                             }
@@ -365,12 +371,15 @@ fun SettingsScreen(
                                 else -> Lucide.Mic
                             }
                         }
+
+                        val hasSubSettings = !isAdbRecordingDefault && (audioSource == "MicSystem" || audioSource == "Mic" || audioSource == "System")
+
                         OrionSettingsValueItem(
                             icon = audioIcon,
                             title = "Audio Input",
                             subtitle = audioSubtitle,
                             value = audioDisplay,
-                            position = StackPosition.Single,
+                            position = if (hasSubSettings) StackPosition.Top else StackPosition.Single,
                             showChevron = !isAdbRecordingDefault,
                             onClick = {
                                 if (isAdbRecordingDefault) {
@@ -384,6 +393,69 @@ fun SettingsScreen(
                                 }
                             }
                         )
+
+                        if (!isAdbRecordingDefault) {
+                            if (audioSource == "MicSystem") {
+                                OrionSettingsSwitchItem(
+                                    icon = Lucide.Volume2,
+                                    title = "Voice Priority (Auto-Ducking)",
+                                    subtitle = "Auto-lowers game sound when you speak so commentary is clear",
+                                    checked = voicePriority,
+                                    position = StackPosition.Middle,
+                                    onCheckedChange = { coroutineScope.launch { settingsManager.setVoicePriority(it) } }
+                                )
+                                OrionSettingsValueItem(
+                                    icon = Lucide.Mic,
+                                    title = "Microphone Boost",
+                                    subtitle = "Digital preamp gain for voice capture",
+                                    value = "$micVolume%",
+                                    position = StackPosition.Middle,
+                                    onClick = { showMicVolumeDialog = true }
+                                )
+                                OrionSettingsValueItem(
+                                    icon = Lucide.Volume2,
+                                    title = "Internal Audio Mix",
+                                    subtitle = "Game audio volume balance (Earphones recommended for dual audio)",
+                                    value = "$internalAudioVolume%",
+                                    position = StackPosition.Middle,
+                                    onClick = { showInternalVolumeDialog = true }
+                                )
+                                OrionSettingsSwitchItem(
+                                    icon = Lucide.Mic,
+                                    title = "Vocal Clarity Filter",
+                                    subtitle = "120Hz high-pass filter to reduce phone rumble",
+                                    checked = vocalClarity,
+                                    position = StackPosition.Bottom,
+                                    onCheckedChange = { coroutineScope.launch { settingsManager.setVocalClarity(it) } }
+                                )
+                            } else if (audioSource == "Mic") {
+                                OrionSettingsValueItem(
+                                    icon = Lucide.Mic,
+                                    title = "Microphone Boost",
+                                    subtitle = "Digital preamp gain for voice capture",
+                                    value = "$micVolume%",
+                                    position = StackPosition.Middle,
+                                    onClick = { showMicVolumeDialog = true }
+                                )
+                                OrionSettingsSwitchItem(
+                                    icon = Lucide.Mic,
+                                    title = "Vocal Clarity Filter",
+                                    subtitle = "120Hz high-pass filter to reduce phone rumble",
+                                    checked = vocalClarity,
+                                    position = StackPosition.Bottom,
+                                    onCheckedChange = { coroutineScope.launch { settingsManager.setVocalClarity(it) } }
+                                )
+                            } else if (audioSource == "System") {
+                                OrionSettingsValueItem(
+                                    icon = Lucide.Volume2,
+                                    title = "Internal Audio Mix",
+                                    subtitle = "System audio level balance",
+                                    value = "$internalAudioVolume%",
+                                    position = StackPosition.Bottom,
+                                    onClick = { showInternalVolumeDialog = true }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -522,11 +594,18 @@ fun SettingsScreen(
                 Column {
                     OrionSectionHeader("ABOUT SCREENX")
                     OrionStackedGroupCard {
+                        val appVersion = remember {
+                            try {
+                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.3.0"
+                            } catch (_: Exception) {
+                                "1.3.0"
+                            }
+                        }
                         OrionSettingsInfoItem(
                             icon = Lucide.Settings,
                             title = "ScreenX Recorder",
-                            subtitle = "Version 1.2.0 • Pro Screen Capture",
-                            badge = "v1.2.0",
+                            subtitle = "Version $appVersion • Pro Screen Capture",
+                            badge = "v$appVersion",
                             position = StackPosition.Top
                         )
                         val maxFps = DeviceCapabilitiesHelper.getMaxSupportedFps(context)
@@ -685,6 +764,70 @@ fun SettingsScreen(
                 val sourceKey = mapping.entries.firstOrNull { it.value == displayName }?.key ?: "Mic"
                 coroutineScope.launch { settingsManager.setAudioSource(sourceKey) }
                 showAudioDialog = false
+            }
+        )
+    }
+
+    // Microphone Volume Boost Dialog
+    if (showMicVolumeDialog) {
+        val options = listOf(
+            "100% (Standard)",
+            "200% (+6 dB)",
+            "300% (+9.5 dB)",
+            "350% (+11 dB • Recommended)",
+            "450% (+13 dB • Quiet Voice)",
+            "500% (+14 dB • High Boost)"
+        )
+        val currentStr = when (micVolume) {
+            100 -> "100% (Standard)"
+            200 -> "200% (+6 dB)"
+            300 -> "300% (+9.5 dB)"
+            350 -> "350% (+11 dB • Recommended)"
+            450 -> "450% (+13 dB • Quiet Voice)"
+            500 -> "500% (+14 dB • High Boost)"
+            else -> "$micVolume%"
+        }
+        OptionSelectionDialog(
+            title = "Microphone Gain Boost",
+            options = options,
+            selectedOption = currentStr,
+            onDismiss = { showMicVolumeDialog = false },
+            onSelect = { selected ->
+                val percent = selected.substringBefore("%").toIntOrNull() ?: 350
+                coroutineScope.launch { settingsManager.setMicVolume(percent) }
+                showMicVolumeDialog = false
+            }
+        )
+    }
+
+    // Internal Audio Mix Dialog
+    if (showInternalVolumeDialog) {
+        val options = listOf(
+            "5% (-40 dB • Whisper Quiet)",
+            "15% (-33 dB • Quiet Bed • Recommended)",
+            "30% (-20 dB • Balanced Game)",
+            "50% (-12 dB • Prominent Game)",
+            "75% (-5 dB)",
+            "100% (Full Output)"
+        )
+        val currentStr = when (internalAudioVolume) {
+            5 -> "5% (-40 dB • Whisper Quiet)"
+            15 -> "15% (-33 dB • Quiet Bed • Recommended)"
+            30 -> "30% (-20 dB • Balanced Game)"
+            50 -> "50% (-12 dB • Prominent Game)"
+            75 -> "75% (-5 dB)"
+            100 -> "100% (Full Output)"
+            else -> "$internalAudioVolume%"
+        }
+        OptionSelectionDialog(
+            title = "Internal Audio Mix Level",
+            options = options,
+            selectedOption = currentStr,
+            onDismiss = { showInternalVolumeDialog = false },
+            onSelect = { selected ->
+                val percent = selected.substringBefore("%").toIntOrNull() ?: 15
+                coroutineScope.launch { settingsManager.setInternalAudioVolume(percent) }
+                showInternalVolumeDialog = false
             }
         )
     }

@@ -9,6 +9,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -74,6 +75,22 @@ class MainActivity : ComponentActivity() {
     private val recordingSavedReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshVideos()
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(800)
+                refreshVideos()
+            }
+        }
+    }
+
+    private val mediaObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        private var lastRefreshTime = 0L
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            super.onChange(selfChange, uri)
+            val now = System.currentTimeMillis()
+            if (now - lastRefreshTime > 600) {
+                lastRefreshTime = now
+                refreshVideos()
+            }
         }
     }
 
@@ -124,6 +141,21 @@ class MainActivity : ComponentActivity() {
             registerReceiver(recordingSavedReceiver, filter)
         }
 
+        try {
+            contentResolver.registerContentObserver(
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                true,
+                mediaObserver
+            )
+            contentResolver.registerContentObserver(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                true,
+                mediaObserver
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Failed to register media ContentObserver", e)
+        }
+
         setContent {
             val themeMode by settingsManager.themeModeFlow.collectAsState(initial = "system")
             val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -170,11 +202,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 
-                // Track service state locally
-                LaunchedEffect(Unit) {
-                    while (true) {
-                        isRecordingActive = ScreenRecordService.isRecording
-                        kotlinx.coroutines.delay(1000)
+                val isSaving by ScreenRecordService.isSavingFlow.collectAsState()
+                val isServiceRecording by ScreenRecordService.isRecordingFlow.collectAsState()
+
+                LaunchedEffect(isServiceRecording) {
+                    isRecordingActive = isServiceRecording
+                }
+
+                LaunchedEffect(isSaving) {
+                    if (!isSaving) {
+                        refreshVideos()
                     }
                 }
 
@@ -209,10 +246,12 @@ class MainActivity : ComponentActivity() {
                                 ScreenState.HOME -> {
                                     HomeScreen(
                                         videos = recordedVideos,
+                                        onRefresh = { refreshVideos() },
                                         onStartRecordingClick = { handleRecordToggle() },
                                         onAdbRecordClick = { handleAdbRecordToggle() },
                                         onDeleteVideo = { deleteVideoFile(it) },
                                         isRecordingActive = isRecordingActive,
+                                        isSaving = isSaving,
                                         settingsManager = settingsManager,
                                         onScreenshotClick = { triggerScreenshot() },
                                         onViewAllClick = { currentScreen = ScreenState.GALLERY },
@@ -232,6 +271,7 @@ class MainActivity : ComponentActivity() {
                                 ScreenState.GALLERY -> {
                                     GalleryScreen(
                                         videos = recordedVideos,
+                                        onRefresh = { refreshVideos() },
                                         onBackClick = { currentScreen = ScreenState.HOME },
                                         onDeleteVideo = { deleteVideoFile(it) },
                                         onTrimVideoClick = { video ->
@@ -368,6 +408,9 @@ class MainActivity : ComponentActivity() {
                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
                     permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
                 }
+                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                    permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
+                }
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                     permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -391,7 +434,8 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val recordAudioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: true
         val storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions[Manifest.permission.READ_MEDIA_VIDEO] ?: true
+            (permissions[Manifest.permission.READ_MEDIA_VIDEO] ?: true) &&
+            (permissions[Manifest.permission.READ_MEDIA_IMAGES] ?: true)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             permissions[Manifest.permission.READ_EXTERNAL_STORAGE] ?: true
         } else {
@@ -498,6 +542,11 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         try {
             unregisterReceiver(recordingSavedReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        try {
+            contentResolver.unregisterContentObserver(mediaObserver)
         } catch (e: Exception) {
             e.printStackTrace()
         }

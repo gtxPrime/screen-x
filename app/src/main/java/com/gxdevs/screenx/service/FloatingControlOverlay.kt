@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.*
 import androidx.savedstate.*
 import com.gxdevs.screenx.MainActivity
@@ -58,8 +60,8 @@ class FloatingControlOverlay(private val context: Context) {
     private val overlayScope = CoroutineScope(Dispatchers.Main)
 
     // Pre-computed expanded pill width (dp math):
-    // orb(34) + 4×btn(34) + 4×gap(4) + padding(8) ≈ 198dp
-    private val EXPANDED_W_PX = (206 * density).toInt()
+    // orb(34) + 5×btn(34) + 5×gap(4) + padding(8) ≈ 244dp
+    private val EXPANDED_W_PX = (244 * density).toInt()
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var rootView: android.view.View? = null
@@ -287,6 +289,20 @@ class FloatingControlOverlay(private val context: Context) {
         val inDismiss  by remember { inDismissZone }
         val lastTouch  by remember { lastTouchTime }
 
+        var isMicMuted by remember { mutableStateOf(ScreenRecordService.isMicMuted) }
+        var elapsedSeconds by remember { mutableStateOf(0L) }
+
+        LaunchedEffect(isRecording, isPaused) {
+            while (isRecording) {
+                if (!isPaused && ScreenRecordService.recordingStartTimeMs > 0) {
+                    val totalMs = ScreenRecordService.accumulatedDurationMs + (System.currentTimeMillis() - ScreenRecordService.recordingStartTimeMs)
+                    elapsedSeconds = (totalMs / 1000L).coerceAtLeast(0L)
+                }
+                isMicMuted = ScreenRecordService.isMicMuted
+                delay(500)
+            }
+        }
+
         // ── Auto-dim and Auto-collapse ────────────────────────────────────────
         var isIdle by remember { mutableStateOf(false) }
         LaunchedEffect(lastTouch, isExpanded) {
@@ -314,14 +330,16 @@ class FloatingControlOverlay(private val context: Context) {
         var b2 by remember { mutableStateOf(false) }
         var b3 by remember { mutableStateOf(false) }
         var b4 by remember { mutableStateOf(false) }
+        var b5 by remember { mutableStateOf(false) }
         LaunchedEffect(isExpanded) {
             if (isExpanded) {
                 delay(10L); b1 = true
-                delay(35L); b2 = true
-                delay(35L); b3 = true
-                delay(35L); b4 = true
+                delay(30L); b2 = true
+                delay(30L); b3 = true
+                delay(30L); b4 = true
+                delay(30L); b5 = true
             } else {
-                b4 = false; b3 = false; b2 = false; b1 = false
+                b5 = false; b4 = false; b3 = false; b2 = false; b1 = false
             }
         }
 
@@ -376,7 +394,8 @@ class FloatingControlOverlay(private val context: Context) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier         = Modifier
-                        .size(orbSize)
+                        .height(orbSize)
+                        .defaultMinSize(minWidth = orbSize)
                         .clip(CircleShape)
                         .then(
                             if (inDismiss) {
@@ -400,7 +419,7 @@ class FloatingControlOverlay(private val context: Context) {
                         }
                 ) {
                     if (isRecording && !isExpanded && !inDismiss) {
-                        // Pulsing red recording dot
+                        // Pulsing red recording dot + live timer
                         val infiniteTransition = rememberInfiniteTransition(label = "pulse")
                         val scale by infiniteTransition.animateFloat(
                             initialValue  = 0.8f,
@@ -411,13 +430,26 @@ class FloatingControlOverlay(private val context: Context) {
                             ),
                             label = "dotScale"
                         )
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .scale(scale)
-                                .clip(CircleShape)
-                                .background(StopRed)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 7.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .scale(scale)
+                                    .clip(CircleShape)
+                                    .background(StopRed)
+                            )
+                            val formattedTime = String.format(java.util.Locale.US, "%02d:%02d", elapsedSeconds / 60, elapsedSeconds % 60)
+                            Text(
+                                text = formattedTime,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            )
+                        }
                     } else {
                         val icon = when {
                             inDismiss   -> Icons.Outlined.Delete
@@ -427,9 +459,9 @@ class FloatingControlOverlay(private val context: Context) {
                         }
                         Icon(
                             imageVector        = icon,
-                            contentDescription = null,
+                            contentDescription = if (isExpanded) "Collapse floating menu" else "Expand floating menu",
                             tint               = Color.White,
-                            modifier           = Modifier.size(16.dp)
+                            modifier           = Modifier.size(16.dp).padding(horizontal = 4.dp)
                         )
                     }
                 }
@@ -443,37 +475,44 @@ class FloatingControlOverlay(private val context: Context) {
                     ) {
                         if (isAdbRecording) {
                             // ADB Recording Controls
-                            GlassBtn(b1, Icons.Outlined.Stop, Color.White) {
+                            GlassBtn(b1, Icons.Outlined.Stop, Color.White, "Stop Stealth recording") {
                                 collapsePill()
                                 val intent = Intent(context, AdbRecordService::class.java).apply {
                                     action = AdbRecordService.ACTION_STOP_ADB
                                 }
                                 context.startService(intent)
                             }
-                            GlassBtn(b2, Icons.Outlined.CameraAlt, Color.White) { onScreenshot() }
-                            GlassBtn(b3, Icons.Outlined.Home, Color.White) {
+                            GlassBtn(b2, Icons.Outlined.CameraAlt, Color.White, "Take screenshot") { onScreenshot() }
+                            GlassBtn(b3, Icons.Outlined.Home, Color.White, "Open app home") {
                                 collapsePill()
                                 val intent = Intent(context, MainActivity::class.java).apply {
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                                 }
                                 context.startActivity(intent)
                             }
-                            GlassBtn(b4, Icons.Outlined.Close, Color.White) {
+                            GlassBtn(b4, Icons.Outlined.Close, Color.White, "Close menu") {
                                 collapsePill()
                             }
                         } else if (isRecording) {
                             // Standard MediaProjection Controls
-                            GlassBtn(b1, if (isPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, Color.White) { onPauseToggle() }
-                            GlassBtn(b2, Icons.Outlined.Stop, Color.White) {
+                            GlassBtn(b1, if (isPaused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, Color.White, if (isPaused) "Resume" else "Pause") { onPauseToggle() }
+                            GlassBtn(b2, Icons.Outlined.Stop, Color.White, "Stop recording") {
                                 collapsePill()
                                 onStop()
                             }
-                            GlassBtn(b3, Icons.Outlined.Brush, Color.White) { onBrushToggle() }
-                            GlassBtn(b4, Icons.Outlined.CameraAlt, Color.White) { onScreenshot() }
+                            GlassBtn(b3, if (isMicMuted) Icons.Outlined.MicOff else Icons.Outlined.Mic, if (isMicMuted) StopRed else Color.White, if (isMicMuted) "Unmute microphone" else "Mute microphone") {
+                                val intent = Intent(context, ScreenRecordService::class.java).apply {
+                                    action = ScreenRecordService.ACTION_TOGGLE_MIC
+                                }
+                                context.startService(intent)
+                                isMicMuted = !isMicMuted
+                            }
+                            GlassBtn(b4, Icons.Outlined.Brush, Color.White, "Screen brush") { onBrushToggle() }
+                            GlassBtn(b5, Icons.Outlined.CameraAlt, Color.White, "Take screenshot") { onScreenshot() }
                         } else {
                             // Standby Controls:
                             // 1. Record (respects ADB setting and handles unpaired gracefully!)
-                            GlassBtn(b1, Icons.Outlined.RadioButtonChecked, Color.White) {
+                            GlassBtn(b1, Icons.Outlined.RadioButtonChecked, Color.White, "Start screen recording") {
                                 collapsePill()
                                 overlayScope.launch {
                                     val adbEnabled = settingsManager.adbEnabledFlow.first()
@@ -515,7 +554,7 @@ class FloatingControlOverlay(private val context: Context) {
                                 }
                             }
                             // 2. Open ScreenX Home
-                            GlassBtn(b2, Icons.Outlined.Home, Color.White) {
+                            GlassBtn(b2, Icons.Outlined.Home, Color.White, "Open app home") {
                                 collapsePill()
                                 val intent = Intent(context, MainActivity::class.java).apply {
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -523,7 +562,7 @@ class FloatingControlOverlay(private val context: Context) {
                                 context.startActivity(intent)
                             }
                             // 3. Settings
-                            GlassBtn(b3, Icons.Outlined.Settings, Color.White) {
+                            GlassBtn(b3, Icons.Outlined.Settings, Color.White, "Settings") {
                                 collapsePill()
                                 val intent = Intent(context, MainActivity::class.java).apply {
                                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -532,7 +571,7 @@ class FloatingControlOverlay(private val context: Context) {
                                 context.startActivity(intent)
                             }
                             // 4. Close (Collapse back to ball)
-                            GlassBtn(b4, Icons.Outlined.Close, Color.White) {
+                            GlassBtn(b4, Icons.Outlined.Close, Color.White, "Close menu") {
                                 collapsePill()
                             }
                         }
@@ -738,6 +777,7 @@ private fun GlassBtn(
     visible: Boolean,
     icon:    ImageVector,
     tint:    Color,
+    contentDescription: String? = null,
     onClick: () -> Unit
 ) {
     val scale by animateFloatAsState(
@@ -760,6 +800,6 @@ private fun GlassBtn(
             .background(Color.White.copy(alpha = 0.10f)) // Translucent glass button
             .clickable(enabled = visible, onClick = onClick)
     ) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(15.dp))
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(15.dp))
     }
 }

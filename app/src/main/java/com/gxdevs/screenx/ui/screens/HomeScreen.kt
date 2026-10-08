@@ -12,6 +12,8 @@ import com.gxdevs.screenx.ui.components.MainRecordShaderCard
 import android.util.Size
 import android.widget.Toast
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
@@ -228,21 +230,38 @@ fun HomeScreen(
     onAdbRecordClick: () -> Unit,
     onDeleteVideo: (RecordedVideo) -> Unit,
     isRecordingActive: Boolean,
+    isSaving: Boolean = false,
     settingsManager: SettingsManager,
     onScreenshotClick: () -> Unit,
     onViewAllClick: () -> Unit,
     onTrimVideoClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onRefresh: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var selectedVideoForPlayback by remember { mutableStateOf<RecordedVideo?>(null) }
+    var selectedScreenshotForViewer by remember { mutableStateOf<RecordedVideo?>(null) }
+    var mediaToDelete by remember { mutableStateOf<RecordedVideo?>(null) }
+
+    // Refresh animation state
+    var isRefreshing by remember { mutableStateOf(false) }
+    val refreshRotation by animateFloatAsState(
+        targetValue = if (isRefreshing) 360f else 0f,
+        animationSpec = tween(
+            durationMillis = 650,
+            easing = LinearEasing
+        ),
+        finishedListener = { isRefreshing = false },
+        label = "homeRefreshAnim"
+    )
 
     // Settings Flows
     val resolution by settingsManager.resolutionFlow.collectAsState(initial = "1080p")
     val fps by settingsManager.fpsFlow.collectAsState(initial = 30)
     val bitrate by settingsManager.bitrateFlow.collectAsState(initial = 8000000)
     val audioSource by settingsManager.audioSourceFlow.collectAsState(initial = "Mic")
+    val voicePriority by settingsManager.voicePriorityFlow.collectAsState(initial = true)
     val orientation by settingsManager.orientationFlow.collectAsState(initial = "Auto")
     val safeStorageStop by settingsManager.safeStorageStopFlow.collectAsState(initial = true)
     val adbEnabled by settingsManager.adbEnabledFlow.collectAsState(initial = false)
@@ -520,16 +539,70 @@ fun HomeScreen(
                     }
                 }
 
-                // Recent Recordings Title
-                Text(
-                    text = "Recent Recordings",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                // Recent Recordings Title & Refresh
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Recent Recordings",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    IconButton(
+                        onClick = {
+                            if (isSaving) {
+                                Toast.makeText(context, "Finalizing recording, please wait...", Toast.LENGTH_SHORT).show()
+                            } else {
+                                isRefreshing = true
+                                onRefresh()
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(650)
+                                    isRefreshing = false
+                                    Toast.makeText(context, "Library refreshed (${videos.size} items)", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.RotateCcw,
+                            contentDescription = "Refresh recordings",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .graphicsLayer { rotationZ = refreshRotation }
+                        )
+                    }
+                }
+
+                if (isSaving) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Saving recording...", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
 
                 // List of Recent Videos (Vertical scrollable column for landscape)
-                if (videos.isEmpty()) {
+                if (videos.isEmpty() && !isSaving) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -548,9 +621,15 @@ fun HomeScreen(
                         items(videos.take(2), key = { it.id }) { video ->
                             RecentVideoCard(
                                 video = video,
-                                onClick = { selectedVideoForPlayback = video },
+                                onClick = {
+                                    if (video.isVideo) {
+                                        selectedVideoForPlayback = video
+                                    } else {
+                                        selectedScreenshotForViewer = video
+                                    }
+                                },
                                 onShare = { VideoHelper.shareVideo(context, video) },
-                                onDelete = { onDeleteVideo(video) }
+                                onDelete = { mediaToDelete = video }
                             )
                         }
                     }
@@ -743,10 +822,11 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "Audio Source",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        text = if (audioSource == "MicSystem" && voicePriority) "Auto Voice Priority" else "Audio Source",
+                                        color = if (audioSource == "MicSystem" && voicePriority) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.sp,
-                                        lineHeight = 14.sp
+                                        lineHeight = 14.sp,
+                                        fontWeight = if (audioSource == "MicSystem" && voicePriority) FontWeight.SemiBold else FontWeight.Normal
                                     )
                                 }
                             }
@@ -1031,17 +1111,19 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // Gallery / Recent Recordings Section
-            // Gallery Section (only shown if there are recorded videos)
-            if (videos.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             text = "Gallery",
@@ -1049,6 +1131,33 @@ fun HomeScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
                         )
+                        IconButton(
+                            onClick = {
+                                if (isSaving) {
+                                    Toast.makeText(context, "Finalizing recording, please wait...", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    isRefreshing = true
+                                    onRefresh()
+                                    coroutineScope.launch {
+                                        kotlinx.coroutines.delay(650)
+                                        isRefreshing = false
+                                        Toast.makeText(context, "Library refreshed (${videos.size} items)", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Lucide.RotateCcw,
+                                contentDescription = "Refresh recordings",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .graphicsLayer { rotationZ = refreshRotation }
+                            )
+                        }
+                    }
+                    if (videos.isNotEmpty()) {
                         Text(
                             text = "View All",
                             color = MaterialTheme.colorScheme.primary,
@@ -1059,24 +1168,134 @@ fun HomeScreen(
                             }
                         )
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        contentPadding = PaddingValues(end = 10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (isSaving) {
+                    Card(
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp)
                     ) {
-                        items(videos, key = { it.id }) { video ->
-                            RecentThumbnailItem(
-                                video = video,
-                                onClick = { selectedVideoForPlayback = video },
-                                onDelete = { onDeleteVideo(video) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.5.dp
                             )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Finalizing & Saving Recording...",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Merging audio and adding to gallery",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                if (videos.isNotEmpty()) {
+                    // Featured Latest Recording Card
+                    val latestVideo = videos.first()
+                    RecentVideoCard(
+                        video = latestVideo,
+                        onClick = {
+                            if (latestVideo.isVideo) {
+                                selectedVideoForPlayback = latestVideo
+                            } else {
+                                selectedScreenshotForViewer = latestVideo
+                            }
+                        },
+                        onShare = { VideoHelper.shareVideo(context, latestVideo) },
+                        onDelete = { mediaToDelete = latestVideo }
+                    )
+
+                    // Previous Recordings Horizontal Row
+                    if (videos.size > 1) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(end = 10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(videos.drop(1), key = { it.id }) { video ->
+                                RecentThumbnailItem(
+                                    video = video,
+                                    onClick = {
+                                        if (video.isVideo) {
+                                            selectedVideoForPlayback = video
+                                        } else {
+                                            selectedScreenshotForViewer = video
+                                        }
+                                    },
+                                    onDelete = { mediaToDelete = video }
+                                )
+                            }
+                        }
+                    }
+                } else if (!isSaving) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                isRefreshing = true
+                                onRefresh()
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(650)
+                                    isRefreshing = false
+                                    Toast.makeText(context, "Library refreshed (${videos.size} items)", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Lucide.RotateCcw,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .graphicsLayer { rotationZ = refreshRotation }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "No recordings visible. Tap to refresh",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             // Quick Tools Section
             Column(
@@ -1177,7 +1396,7 @@ fun HomeScreen(
         val mapping = linkedMapOf(
             "Mic" to "Microphone Only",
             "System" to "Internal Audio Only",
-            "MicSystem" to "Mic + Internal Audio (Mixed)",
+            "MicSystem" to "Mic + Internal Audio (Voice Priority)",
             "None" to "No Audio (Muted)"
         )
         val options = mapping.values.toList()
@@ -1212,6 +1431,33 @@ fun HomeScreen(
             videoUri = video.uri,
             videoName = video.name,
             onDismiss = { selectedVideoForPlayback = null }
+        )
+    }
+
+    // Screenshot Viewer Dialog
+    selectedScreenshotForViewer?.let { shot ->
+        ScreenshotViewerDialog(
+            imageUri = shot.uri,
+            imageName = shot.name,
+            onDismiss = { selectedScreenshotForViewer = null },
+            onShare = { VideoHelper.shareVideo(context, shot) },
+            onDelete = {
+                mediaToDelete = shot
+                selectedScreenshotForViewer = null
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    mediaToDelete?.let { item ->
+        DeleteConfirmDialog(
+            media = item,
+            onDismiss = { mediaToDelete = null },
+            onConfirm = {
+                val target = item
+                mediaToDelete = null
+                onDeleteVideo(target)
+            }
         )
     }
 }
@@ -1266,7 +1512,7 @@ fun RecentVideoCard(
     val context = LocalContext.current
 
     LaunchedEffect(video.uri) {
-        thumbnail = loadVideoThumbnail(context, video.uri)
+        thumbnail = VideoHelper.loadThumbnail(context, video.uri, video.isVideo)
     }
 
     Card(
@@ -1301,7 +1547,7 @@ fun RecentVideoCard(
                     )
                 } else {
                     Icon(
-                        imageVector = Lucide.CirclePlay,
+                        imageVector = if (video.isVideo) Lucide.CirclePlay else Lucide.Image,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(28.dp)
@@ -1310,15 +1556,24 @@ fun RecentVideoCard(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .background(Color(0x99000000), RoundedCornerShape(topStart = 6.dp))
+                        .background(Color(0xCC000000), RoundedCornerShape(topStart = 6.dp))
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
-                    Text(
-                        VideoHelper.formatDuration(video.duration),
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (video.isVideo) {
+                        Text(
+                            VideoHelper.formatDuration(video.duration),
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            "IMG",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -1362,12 +1617,12 @@ fun RecentVideoCard(
                     onDismissRequest = { expandedMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Play") },
+                        text = { Text(if (video.isVideo) "Play" else "View") },
                         onClick = {
                             expandedMenu = false
                             onClick()
                         },
-                        leadingIcon = { Icon(Lucide.Play, contentDescription = null) }
+                        leadingIcon = { Icon(if (video.isVideo) Lucide.Play else Lucide.Image, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Share") },
@@ -1378,12 +1633,12 @@ fun RecentVideoCard(
                         leadingIcon = { Icon(Lucide.Share2, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Delete") },
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             expandedMenu = false
                             onDelete()
                         },
-                        leadingIcon = { Icon(Lucide.Trash2, contentDescription = null, tint = Color.Red) }
+                        leadingIcon = { Icon(Lucide.Trash2, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                     )
                 }
             }
@@ -1813,7 +2068,7 @@ fun RecentThumbnailItem(
     val context = LocalContext.current
 
     LaunchedEffect(video.uri) {
-        thumbnail = loadVideoThumbnail(context, video.uri)
+        thumbnail = VideoHelper.loadThumbnail(context, video.uri, video.isVideo)
     }
 
     Card(
@@ -1841,7 +2096,7 @@ fun RecentThumbnailItem(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Lucide.CirclePlay,
+                        imageVector = if (video.isVideo) Lucide.CirclePlay else Lucide.Image,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(36.dp)
@@ -1854,15 +2109,24 @@ fun RecentThumbnailItem(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(6.dp)
-                    .background(Color(0xAA000000), RoundedCornerShape(4.dp))
+                    .background(Color(0xCC000000), RoundedCornerShape(4.dp))
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
-                Text(
-                    text = VideoHelper.formatDuration(video.duration),
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (video.isVideo) {
+                    Text(
+                        text = VideoHelper.formatDuration(video.duration),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = "IMG",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             // Options menu button at top-end
@@ -1886,12 +2150,12 @@ fun RecentThumbnailItem(
                     onDismissRequest = { expandedMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Play") },
+                        text = { Text(if (video.isVideo) "Play" else "View") },
                         onClick = {
                             expandedMenu = false
                             onClick()
                         },
-                        leadingIcon = { Icon(Lucide.Play, contentDescription = null) }
+                        leadingIcon = { Icon(if (video.isVideo) Lucide.Play else Lucide.Image, contentDescription = null) }
                     )
                     DropdownMenuItem(
                         text = { Text("Share") },
@@ -1902,12 +2166,12 @@ fun RecentThumbnailItem(
                         leadingIcon = { Icon(Lucide.Share2, contentDescription = null) }
                     )
                     DropdownMenuItem(
-                        text = { Text("Delete") },
+                        text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             expandedMenu = false
                             onDelete()
                         },
-                        leadingIcon = { Icon(Lucide.Trash2, contentDescription = null, tint = Color.Red) }
+                        leadingIcon = { Icon(Lucide.Trash2, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                     )
                 }
             }

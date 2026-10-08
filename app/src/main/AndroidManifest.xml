@@ -19,6 +19,7 @@
     
     <!-- Storage permissions for Android 13+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <!-- INTERNET and Network State for local TCP connection to wireless ADB daemon and mDNS -->
     <uses-permission android:name="android.permission.INTERNET" />

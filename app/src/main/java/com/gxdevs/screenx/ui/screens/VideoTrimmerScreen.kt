@@ -314,6 +314,12 @@ fun TrimmerEditor(
     }
 
     var isPlaying by remember { mutableStateOf(false) }
+    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+
+    LaunchedEffect(playbackSpeed) {
+        exoPlayer.setPlaybackSpeed(playbackSpeed)
+    }
+
     LaunchedEffect(exoPlayer) {
         exoPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
@@ -380,7 +386,6 @@ fun TrimmerEditor(
         }
     }
 
-    DisposableEffect(Unit) { onDispose { exoPlayer.release() } }
 
     // Helper functions for editing
     fun splitAtPlayhead() {
@@ -436,6 +441,13 @@ fun TrimmerEditor(
         thumbnails = withContext(Dispatchers.IO) {
             old.forEach { it?.recycle() }
             loadFrameThumbnails(context, videoUri, videoDurationMs, thumbnailCount)
+        }
+    }
+
+    DisposableEffect(videoUri) {
+        onDispose {
+            exoPlayer.release()
+            thumbnails.forEach { it?.recycle() }
         }
     }
 
@@ -517,49 +529,79 @@ fun TrimmerEditor(
                                 listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
                             )
                         )
-                        .padding(bottom = 12.dp, top = 24.dp),
-                    horizontalArrangement = Arrangement.Center,
+                        .padding(bottom = 12.dp, top = 24.dp, start = 14.dp, end = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         formatTime(currentPosMs),
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = Color.White.copy(alpha = 0.85f),
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(end = 16.dp)
+                        fontWeight = FontWeight.Medium
                     )
 
-                    IconButton(
-                        onClick = { exoPlayer.seekTo((currentPosMs - 5000).coerceAtLeast(0)) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(Lucide.RotateCcw, "-5s", tint = Color.White)
+                        IconButton(
+                            onClick = { exoPlayer.seekTo((currentPosMs - 5000).coerceAtLeast(0)) }
+                        ) {
+                            Icon(Lucide.RotateCcw, "-5s", tint = Color.White)
+                        }
+                        IconButton(
+                            onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        ) {
+                            Icon(
+                                if (isPlaying) Lucide.Pause else Lucide.Play,
+                                "Play/Pause", tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { exoPlayer.seekTo((currentPosMs + 5000).coerceAtMost(videoDurationMs)) }
+                        ) {
+                            Icon(Lucide.RotateCw, "+5s", tint = Color.White)
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
-                        modifier = Modifier
-                            .size(52.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            if (isPlaying) Lucide.Pause else Lucide.Play,
-                            "Play/Pause", tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                        Text(
+                            formatTime(videoDurationMs),
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 13.sp
                         )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    IconButton(
-                        onClick = { exoPlayer.seekTo((currentPosMs + 5000).coerceAtMost(videoDurationMs)) }
-                    ) {
-                        Icon(Lucide.RotateCw, "+5s", tint = Color.White)
-                    }
 
-                    Text(
-                        formatTime(videoDurationMs),
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(start = 16.dp)
-                    )
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color.White.copy(alpha = 0.22f),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    playbackSpeed = when (playbackSpeed) {
+                                        0.5f -> 1.0f
+                                        1.0f -> 1.25f
+                                        1.25f -> 1.5f
+                                        1.5f -> 2.0f
+                                        else -> 0.5f
+                                    }
+                                }
+                        ) {
+                            Text(
+                                text = "${playbackSpeed}x",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -578,12 +620,12 @@ fun TrimmerEditor(
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = when {
-                            isSelected && isDeleted -> Color(0xFFEF5350).copy(alpha = 0.3f)
+                            isSelected && isDeleted -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
                             isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
                             isDeleted -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         },
-                        border = if (isSelected) BorderStroke(2.dp, if (isDeleted) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary) else null,
+                        border = if (isSelected) BorderStroke(2.dp, if (isDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) else null,
                         modifier = Modifier
                             .clickable {
                                 selectedSegmentId = seg.id
@@ -597,7 +639,7 @@ fun TrimmerEditor(
                             Icon(
                                 imageVector = if (isDeleted) Lucide.Eraser else Lucide.Film,
                                 contentDescription = null,
-                                tint = if (isDeleted) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary,
+                                tint = if (isDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
@@ -615,7 +657,7 @@ fun TrimmerEditor(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     text = "DELETED",
-                                    color = Color(0xFFEF5350),
+                                    color = MaterialTheme.colorScheme.error,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black
                                 )
@@ -645,7 +687,7 @@ fun TrimmerEditor(
                         ) {
                             if (activeSeg != null) {
                                 InfoChip("Selected Start", formatTime(activeSeg.startMs), MaterialTheme.colorScheme.primary)
-                                InfoChip("Selected Duration", formatTime(activeSeg.endMs - activeSeg.startMs), Color(0xFF4FC3F7))
+                                InfoChip("Selected Duration", formatTime(activeSeg.endMs - activeSeg.startMs), MaterialTheme.colorScheme.tertiary)
                                 InfoChip("Selected End", formatTime(activeSeg.endMs), MaterialTheme.colorScheme.secondary)
                             } else {
                                 InfoChip("Start", "00:00.0", Color.Gray)
@@ -657,6 +699,9 @@ fun TrimmerEditor(
                         Spacer(Modifier.height(12.dp))
 
                         // ── Frame strip + handles ─────────────────────────────
+                        val errorColor = MaterialTheme.colorScheme.error
+                        val primaryColor = MaterialTheme.colorScheme.primary
+
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -676,7 +721,7 @@ fun TrimmerEditor(
                                         modifier = Modifier
                                             .weight(1f)
                                             .fillMaxHeight()
-                                            .background(Color(0xFF2C2C2E))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
                                         if (bmp != null) {
                                             Image(
@@ -692,7 +737,7 @@ fun TrimmerEditor(
 
                             val currentActiveIdForHighlight = selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                             val currentActiveSegForHighlight = segments.firstOrNull { it.id == currentActiveIdForHighlight }
-                            val highlightColor = if (currentActiveSegForHighlight?.isDeleted == true) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary
+                            val highlightColor = if (currentActiveSegForHighlight?.isDeleted == true) errorColor else primaryColor
 
                             // Dimmed overlay for deleted segments & split vertical lines
                             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -706,7 +751,7 @@ fun TrimmerEditor(
                                     // Dim deleted segments
                                     if (seg.isDeleted) {
                                         drawRect(
-                                            color = Color(0xAAEF5350),
+                                            color = errorColor.copy(alpha = 0.65f),
                                             topLeft = Offset(sX, 0f),
                                             size = GeoSize(eX - sX, H)
                                         )
@@ -740,7 +785,7 @@ fun TrimmerEditor(
                             val currentActiveIdForHandles = draggedSegmentId ?: selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                             val currentActiveSegForHandles = segments.firstOrNull { it.id == currentActiveIdForHandles }
                             if (currentActiveSegForHandles != null) {
-                                val hColor = if (currentActiveSegForHandles.isDeleted) Color(0xFFEF5350) else MaterialTheme.colorScheme.primary
+                                val hColor = if (currentActiveSegForHandles.isDeleted) errorColor else primaryColor
                                 val startFracOfSeg = currentActiveSegForHandles.startMs.toFloat() / videoDurationMs
                                 val endFracOfSeg = currentActiveSegForHandles.endMs.toFloat() / videoDurationMs
                                 
@@ -788,6 +833,7 @@ fun TrimmerEditor(
                             val handleTouchPx = with(density) { 36.dp.toPx() }
                             // 0 = scrub, 1 = start handle, 2 = end handle
                             var dragTarget by remember { mutableStateOf(0) }
+                            var lastSeekMs by remember { mutableLongStateOf(0L) }
 
                             // Drag / Tap target
                             Box(
@@ -821,12 +867,14 @@ fun TrimmerEditor(
                                                 isSeeking = true
                                                 seekTimestamp = System.currentTimeMillis()
                                                 draggedSegmentId = null
+                                                exoPlayer.seekTo(currentPosMs)
                                             },
                                             onDragCancel = { 
                                                 isDragging = false 
                                                 isSeeking = true
                                                 seekTimestamp = System.currentTimeMillis()
                                                 draggedSegmentId = null
+                                                exoPlayer.seekTo(currentPosMs)
                                             },
                                             onDrag = { change, _ ->
                                                 if (timelineWidthPx <= 0f) return@detectDragGestures
@@ -836,6 +884,7 @@ fun TrimmerEditor(
                                                 
                                                 val currentActiveId = draggedSegmentId ?: selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                                                 val targetSegIdx = segments.indexOfFirst { it.id == currentActiveId }
+                                                val now = System.currentTimeMillis()
                                                 
                                                 if (targetSegIdx != -1 && (dragTarget == 1 || dragTarget == 2)) {
                                                     val targetSeg = segments[targetSegIdx]
@@ -848,7 +897,10 @@ fun TrimmerEditor(
                                                         if (targetSegIdx > 0) {
                                                             updatedList[targetSegIdx - 1] = updatedList[targetSegIdx - 1].copy(endMs = finalStartMs)
                                                         }
-                                                        exoPlayer.seekTo(finalStartMs)
+                                                        if (now - lastSeekMs > 60L) {
+                                                            lastSeekMs = now
+                                                            exoPlayer.seekTo(finalStartMs)
+                                                        }
                                                         playFrac = (finalStartMs.toFloat() / videoDurationMs).coerceIn(0f, 1f)
                                                         currentPosMs = finalStartMs
                                                     } else {
@@ -859,7 +911,10 @@ fun TrimmerEditor(
                                                         if (targetSegIdx < segments.size - 1) {
                                                             updatedList[targetSegIdx + 1] = updatedList[targetSegIdx + 1].copy(startMs = finalEndMs)
                                                         }
-                                                        exoPlayer.seekTo(finalEndMs)
+                                                        if (now - lastSeekMs > 60L) {
+                                                            lastSeekMs = now
+                                                            exoPlayer.seekTo(finalEndMs)
+                                                        }
                                                         playFrac = (finalEndMs.toFloat() / videoDurationMs).coerceIn(0f, 1f)
                                                         currentPosMs = finalEndMs
                                                     }
@@ -867,7 +922,10 @@ fun TrimmerEditor(
                                                 } else {
                                                     playFrac = frac.coerceIn(0f, 1f)
                                                     currentPosMs = newMs
-                                                    exoPlayer.seekTo(newMs)
+                                                    if (now - lastSeekMs > 60L) {
+                                                        lastSeekMs = now
+                                                        exoPlayer.seekTo(newMs)
+                                                    }
                                                 }
                                                 change.consume()
                                             }
@@ -928,11 +986,13 @@ fun TrimmerEditor(
                             ) {
                                 Button(
                                     onClick = { splitAtPlayhead() },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(Lucide.Scissors, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Lucide.Scissors, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(8.dp))
                                     Text("Split here", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
@@ -940,16 +1000,18 @@ fun TrimmerEditor(
                                 val isSelectedDeleted = segments.firstOrNull { it.id == activeId }?.isDeleted == true
                                 Button(
                                     onClick = { toggleDeleteSelected() },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp),
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isSelectedDeleted) Color(0xFF4CAF50) else Color(0xFFEF5350)
+                                        containerColor = if (isSelectedDeleted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
                                     ),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Icon(
                                         imageVector = if (isSelectedDeleted) Lucide.RotateCcw else Lucide.Eraser,
                                         contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Text(
@@ -1044,7 +1106,7 @@ fun TrimmerEditor(
                         onBackClick()
                     },
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = Color(0xFFEF5350)
+                        contentColor = MaterialTheme.colorScheme.error
                     )
                 ) {
                     Text(
@@ -1160,10 +1222,10 @@ private fun SmallAdjustBtn(text: String, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C2C2E)),
-        modifier = Modifier.height(26.dp)
+        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.height(28.dp)
     ) {
-        Text(text, fontSize = 9.sp, color = Color.White)
+        Text(text, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1438,6 +1500,10 @@ private fun saveVideoToMediaStore(
             put(MediaStore.Video.Media.SIZE, tempFile.length())
         }
         resolver.update(videoUri, updateValues, null, null)
+        val refreshIntent = android.content.Intent("com.gxdevs.screenx.action.RECORDING_SAVED").apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(refreshIntent)
     } catch (e: Exception) {
         e.printStackTrace()
     } finally {
@@ -1452,15 +1518,7 @@ fun RecentSelectCard(video: RecordedVideo, onClick: () -> Unit) {
     val context = LocalContext.current
     var thumbnail by remember(video.uri) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(video.uri) {
-        thumbnail = withContext(Dispatchers.IO) {
-            try {
-                val r = MediaMetadataRetriever()
-                r.setDataSource(context, video.uri)
-                val bmp = r.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                r.release()
-                bmp
-            } catch (_: Exception) { null }
-        }
+        thumbnail = VideoHelper.loadThumbnail(context, video.uri, video.isVideo)
     }
 
     Card(
