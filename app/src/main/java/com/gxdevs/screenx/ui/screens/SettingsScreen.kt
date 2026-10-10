@@ -98,6 +98,10 @@ import com.gxdevs.screenx.data.SettingsManager
 import com.gxdevs.screenx.service.PairingInputService
 import com.gxdevs.screenx.utils.DeviceCapabilitiesHelper
 import com.gxdevs.screenx.utils.NetworkUtils
+import com.gxdevs.screenx.utils.UpdateManager
+import com.gxdevs.screenx.utils.UpdateCheckResult
+import com.gxdevs.screenx.utils.AppUpdateInfo
+import com.gxdevs.screenx.ui.components.UpdateDialog
 import com.gxdevs.screenx.ui.theme.EmeraldAccent
 import kotlinx.coroutines.launch
 
@@ -121,8 +125,11 @@ fun SettingsScreen(
     val vocalClarity by settingsManager.vocalClarityFlow.collectAsState(initial = true)
     val countdown by settingsManager.countdownFlow.collectAsState(initial = 3)
     val showFloating by settingsManager.showFloatingFlow.collectAsState(initial = true)
+    val hideDuringRecord by settingsManager.hideDuringRecordFlow.collectAsState(initial = false)
     val themeMode by settingsManager.themeModeFlow.collectAsState(initial = "system")
     val shakeToStop by settingsManager.shakeToStopFlow.collectAsState(initial = false)
+    val stopOnScreenOff by settingsManager.stopOnScreenOffFlow.collectAsState(initial = false)
+    val autoCheckUpdates by settingsManager.autoCheckUpdatesFlow.collectAsState(initial = true)
     val orientation by settingsManager.orientationFlow.collectAsState(initial = "Auto")
     val floatingShowMode by settingsManager.floatingShowModeFlow.collectAsState(initial = "Only when recording")
     val safeStorageStop by settingsManager.safeStorageStopFlow.collectAsState(initial = true)
@@ -130,6 +137,10 @@ fun SettingsScreen(
     val adbEnabled by settingsManager.adbEnabledFlow.collectAsState(initial = false)
     val adbCaptureMode by settingsManager.adbCaptureModeFlow.collectAsState(initial = "mediaprojection")
     val adbPaired by settingsManager.adbPairedFlow.collectAsState(initial = false)
+    val swapHomeCards by settingsManager.swapHomeCardsFlow.collectAsState(initial = false)
+
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var availableUpdateForDialog by remember { mutableStateOf<AppUpdateInfo?>(null) }
 
     val isAdbRecordingDefault = adbEnabled && adbCaptureMode == "adb"
 
@@ -481,6 +492,14 @@ fun SettingsScreen(
                             position = StackPosition.Middle,
                             onCheckedChange = { coroutineScope.launch { settingsManager.setShakeToStop(it) } }
                         )
+                        OrionSettingsSwitchItem(
+                            icon = Lucide.Smartphone,
+                            title = "Stop on Screen Off",
+                            subtitle = "End recording of any type when screen turns off or locks",
+                            checked = stopOnScreenOff,
+                            position = StackPosition.Middle,
+                            onCheckedChange = { coroutineScope.launch { settingsManager.setStopOnScreenOff(it) } }
+                        )
                         val floatingBallSummary = when {
                             !showFloating -> "Hidden"
                             floatingShowMode.startsWith("All the time") -> "Always Active"
@@ -491,8 +510,46 @@ fun SettingsScreen(
                             title = "Floating Controls",
                             subtitle = "On-screen quick controls overlay",
                             value = floatingBallSummary,
-                            position = StackPosition.Bottom,
+                            position = StackPosition.Middle,
                             onClick = { showFloatingShowModeDialog = true }
+                        )
+                        if (showFloating) {
+                            OrionSettingsSwitchItem(
+                                icon = Lucide.CircleDot,
+                                title = "Hide Ball While Recording",
+                                subtitle = "Automatically hide floating controls while capture is in progress",
+                                checked = hideDuringRecord,
+                                position = StackPosition.Middle,
+                                onCheckedChange = { coroutineScope.launch { settingsManager.setHideDuringRecord(it) } }
+                            )
+                        }
+                        OrionSettingsValueItem(
+                            icon = Lucide.Zap,
+                            title = "Quick Settings Tile",
+                            subtitle = "Add ScreenX tile to quick settings shade",
+                            value = "Add Tile",
+                            position = StackPosition.Bottom,
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    val statusBarManager = context.getSystemService(android.app.StatusBarManager::class.java)
+                                    statusBarManager?.requestAddTileService(
+                                        android.content.ComponentName(context, com.gxdevs.screenx.service.ScreenXTileService::class.java),
+                                        context.getString(com.gxdevs.screenx.R.string.app_name),
+                                        android.graphics.drawable.Icon.createWithResource(context, com.gxdevs.screenx.R.drawable.ic_qs_record),
+                                        context.mainExecutor
+                                    ) { resultCode ->
+                                        if (resultCode == android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED) {
+                                            Toast.makeText(context, "ScreenX tile added to Quick Settings!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Pull down notification shade twice, tap Edit/Pencil icon, and drag ScreenX to active tiles.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
                         )
                     }
                 }
@@ -576,6 +633,15 @@ fun SettingsScreen(
                                 onClick = { showAdbModeDialog = true }
                             )
 
+                            OrionSettingsSwitchItem(
+                                icon = Lucide.RotateCcw,
+                                title = "Swap Main Card on Home",
+                                subtitle = "Set Stealth Recording as primary big card and standard capture as secondary",
+                                checked = swapHomeCards,
+                                position = StackPosition.Middle,
+                                onCheckedChange = { coroutineScope.launch { settingsManager.setSwapHomeCards(it) } }
+                            )
+
                             OrionSettingsInfoItem(
                                 icon = Lucide.Info,
                                 title = "Stealth Details & Rules",
@@ -596,9 +662,9 @@ fun SettingsScreen(
                     OrionStackedGroupCard {
                         val appVersion = remember {
                             try {
-                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.3.0"
+                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.4.0"
                             } catch (_: Exception) {
-                                "1.3.0"
+                                "1.4.0"
                             }
                         }
                         OrionSettingsInfoItem(
@@ -607,6 +673,41 @@ fun SettingsScreen(
                             subtitle = "Version $appVersion • Pro Screen Capture",
                             badge = "v$appVersion",
                             position = StackPosition.Top
+                        )
+                        OrionSettingsValueItem(
+                            icon = Lucide.RotateCcw,
+                            title = "Check for Updates",
+                            subtitle = if (isCheckingUpdate) "Connecting to GitHub..." else "Check GitHub releases for updates",
+                            value = if (isCheckingUpdate) "Checking..." else "v$appVersion",
+                            position = StackPosition.Middle,
+                            onClick = {
+                                if (!isCheckingUpdate) {
+                                    isCheckingUpdate = true
+                                    coroutineScope.launch {
+                                        val result = UpdateManager.checkForUpdate(context)
+                                        isCheckingUpdate = false
+                                        when (result) {
+                                            is UpdateCheckResult.Available -> {
+                                                availableUpdateForDialog = result.updateInfo
+                                            }
+                                            is UpdateCheckResult.Latest -> {
+                                                Toast.makeText(context, "You're up to date! ScreenX v${result.currentVersion} is the latest version.", Toast.LENGTH_LONG).show()
+                                            }
+                                            is UpdateCheckResult.Error -> {
+                                                Toast.makeText(context, "Could not check for updates: ${result.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        OrionSettingsSwitchItem(
+                            icon = Lucide.Zap,
+                            title = "Auto-Check for Updates",
+                            subtitle = "Automatically check GitHub for new releases on startup",
+                            checked = autoCheckUpdates,
+                            position = StackPosition.Middle,
+                            onCheckedChange = { coroutineScope.launch { settingsManager.setAutoCheckUpdates(it) } }
                         )
                         val maxFps = DeviceCapabilitiesHelper.getMaxSupportedFps(context)
                         OrionSettingsInfoItem(
@@ -624,6 +725,21 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
+    }
+
+    // Update Dialog if available from manual check
+    availableUpdateForDialog?.let { updateInfo ->
+        UpdateDialog(
+            updateInfo = updateInfo,
+            onDismiss = { availableUpdateForDialog = null },
+            onDownload = {
+                availableUpdateForDialog = null
+                UpdateManager.downloadOrOpenUpdate(context, updateInfo.apkDownloadUrl ?: updateInfo.htmlUrl)
+            },
+            onViewGitHub = {
+                UpdateManager.openUrl(context, updateInfo.htmlUrl)
+            }
+        )
     }
 
     // Confirmation Info Dialog shown when user tries to turn on the ADB switch

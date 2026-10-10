@@ -45,6 +45,10 @@ import com.gxdevs.screenx.ui.screens.SettingsScreen
 import com.gxdevs.screenx.ui.theme.ScreenXTheme
 import com.gxdevs.screenx.utils.RecordedVideo
 import com.gxdevs.screenx.utils.VideoHelper
+import com.gxdevs.screenx.utils.UpdateManager
+import com.gxdevs.screenx.utils.UpdateCheckResult
+import com.gxdevs.screenx.utils.AppUpdateInfo
+import com.gxdevs.screenx.ui.components.UpdateDialog
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -175,7 +179,19 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 var selectedVideoForTrimming by remember { mutableStateOf<RecordedVideo?>(null) }
+                var startupUpdateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
                 
+                // Auto-check for updates on app start if enabled
+                LaunchedEffect(Unit) {
+                    val autoCheck = settingsManager.autoCheckUpdatesFlow.first()
+                    if (autoCheck) {
+                        val result = UpdateManager.checkForUpdate(this@MainActivity)
+                        if (result is UpdateCheckResult.Available) {
+                            startupUpdateInfo = result.updateInfo
+                        }
+                    }
+                }
+
                 LaunchedEffect(openSettingsTrigger) {
                     if (openSettingsTrigger) {
                         currentScreen = ScreenState.SETTINGS
@@ -306,6 +322,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+
+                // Startup Update Dialog
+                startupUpdateInfo?.let { updateInfo ->
+                    UpdateDialog(
+                        updateInfo = updateInfo,
+                        onDismiss = { startupUpdateInfo = null },
+                        onDownload = {
+                            startupUpdateInfo = null
+                            UpdateManager.downloadOrOpenUpdate(this@MainActivity, updateInfo.apkDownloadUrl ?: updateInfo.htmlUrl)
+                        },
+                        onViewGitHub = {
+                            UpdateManager.openUrl(this@MainActivity, updateInfo.htmlUrl)
+                        }
+                    )
                 }
             }
         }
