@@ -266,11 +266,37 @@ fun HomeScreen(
     val safeStorageStop by settingsManager.safeStorageStopFlow.collectAsState(initial = true)
     val adbEnabled by settingsManager.adbEnabledFlow.collectAsState(initial = false)
     val adbPaired by settingsManager.adbPairedFlow.collectAsState(initial = false)
+    val swapHomeCards by settingsManager.swapHomeCardsFlow.collectAsState(initial = false)
+
+    val isAdbRecordingActual by com.gxdevs.screenx.service.AdbRecordService.isRecordingFlow.collectAsState()
+    var isAdbStarting by remember { mutableStateOf(false) }
+    LaunchedEffect(isAdbRecordingActual) {
+        isAdbStarting = false
+    }
+    val isAdbRecording = isAdbRecordingActual || isAdbStarting
 
     // Option Dialog Flags
     var showAudioDialog by remember { mutableStateOf(false) }
     var showAdbLimitationsDialog by remember { mutableStateOf(false) }
     var showAdbPairingDialog by remember { mutableStateOf(false) }
+
+    val triggerAdbRecord: () -> Unit = {
+        if (!isAdbRecordingActual) {
+            if (!adbPaired) {
+                android.widget.Toast.makeText(
+                    context,
+                    "Stealth Recording is not paired. Please complete setup first.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                showAdbPairingDialog = true
+            } else {
+                isAdbStarting = true
+                onAdbRecordClick()
+            }
+        } else {
+            onAdbRecordClick()
+        }
+    }
 
     // Dynamic storage calculations
     val freeSpaceGB = remember {
@@ -325,8 +351,13 @@ fun HomeScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
+                    val landscapeRecordingActive = if (swapHomeCards) isAdbRecordingActual else isRecordingActive
                     Text(
-                        text = if (isRecordingActive) "Recording Screen..." else "Ready to Record",
+                        text = if (landscapeRecordingActive) {
+                            if (swapHomeCards) "Stealth Recording..." else "Recording Screen..."
+                        } else {
+                            if (swapHomeCards) "Ready for Stealth" else "Ready to Record"
+                        },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -338,8 +369,10 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(90.dp)
                             .clip(CircleShape)
-                            .background(if (isRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                            .bouncyClickable { onStartRecordingClick() }
+                            .background(if (landscapeRecordingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                            .bouncyClickable {
+                                if (swapHomeCards) triggerAdbRecord() else onStartRecordingClick()
+                            }
                     ) {
                         Box(
                             modifier = Modifier
@@ -348,7 +381,7 @@ fun HomeScreen(
                                 .background(Color.Transparent)
                                 .border(
                                     width = 8.dp,
-                                    color = if (isRecordingActive) Color.White else MaterialTheme.colorScheme.onPrimary,
+                                    color = if (landscapeRecordingActive) Color.White else MaterialTheme.colorScheme.onPrimary,
                                     shape = CircleShape
                                 )
                         )
@@ -697,8 +730,20 @@ fun HomeScreen(
                 ) {
                     // Permanent Dynamic AGSL Shader Gradient with Interactive Chromatic Shockwave Ripple
                     MainRecordShaderCard(
-                        isRecordingActive = isRecordingActive,
-                        onClick = onStartRecordingClick,
+                        isRecordingActive = if (swapHomeCards) isAdbRecording else isRecordingActive,
+                        onClick = {
+                            if (swapHomeCards) triggerAdbRecord() else onStartRecordingClick()
+                        },
+                        titleText = if (swapHomeCards) {
+                            if (isAdbRecording) "Stealth Recording" else "Stealth Record"
+                        } else null,
+                        subtitleText = if (swapHomeCards) {
+                            if (isAdbRecording) "Tap to stop stealth capture" else "Tap for silent stealth capture"
+                        } else null,
+                        badgeText = if (swapHomeCards) {
+                            if (isAdbRecording) "REC" else if (adbPaired) "Ready" else "Pair Required"
+                        } else null,
+                        icon = if (swapHomeCards) Lucide.Zap else null,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
@@ -969,20 +1014,15 @@ fun HomeScreen(
                     }
                 }
 
-                // Row 3: Full Width ADB Record Card (only when ADB switch is enabled)
+                // Row 3: Full Width Secondary Card (only when ADB switch is enabled)
                 if (adbEnabled) {
-                    val isAdbRecordingActual by com.gxdevs.screenx.service.AdbRecordService.isRecordingFlow.collectAsState()
-                    var isAdbStarting by remember { mutableStateOf(false) }
-                    LaunchedEffect(isAdbRecordingActual) {
-                        isAdbStarting = false
-                    }
-                    val isAdbRecording = isAdbRecordingActual || isAdbStarting
+                    val secondaryIsRecording = if (swapHomeCards) isRecordingActive else isAdbRecording
                     Card(
                         shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = if (isAdbRecording)
+                        border = if (secondaryIsRecording)
                             BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
                         else
                             null,
@@ -990,19 +1030,11 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .height(78.dp)
                             .bouncyClickable {
-                                if (!isAdbRecordingActual) {
-                                    if (!adbPaired) {
-                                        android.widget.Toast.makeText(
-                                            context,
-                                            "Stealth Recording is not paired. Please complete setup first.",
-                                            android.widget.Toast.LENGTH_LONG
-                                        ).show()
-                                        showAdbPairingDialog = true
-                                        return@bouncyClickable
-                                    }
-                                    isAdbStarting = true
+                                if (swapHomeCards) {
+                                    onStartRecordingClick()
+                                } else {
+                                    triggerAdbRecord()
                                 }
-                                onAdbRecordClick()
                             }
                     ) {
                         Row(
@@ -1017,7 +1049,7 @@ fun HomeScreen(
                                     .size(38.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isAdbRecording)
+                                        if (secondaryIsRecording)
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.2f)
                                         else
                                             MaterialTheme.colorScheme.surfaceVariant
@@ -1025,9 +1057,9 @@ fun HomeScreen(
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), CircleShape)
                             ) {
                                 Icon(
-                                    imageVector = Lucide.Zap,
+                                    imageVector = if (swapHomeCards) Lucide.CircleDot else Lucide.Zap,
                                     contentDescription = null,
-                                    tint = if (isAdbRecording)
+                                    tint = if (secondaryIsRecording)
                                         MaterialTheme.colorScheme.error
                                     else
                                         MaterialTheme.colorScheme.onSurface,
@@ -1043,29 +1075,34 @@ fun HomeScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(
-                                        text = if (isAdbRecording) "Stealth Recording Active" else "Stealth Recording",
+                                        text = if (swapHomeCards) {
+                                            if (isRecordingActive) "Standard Recording Active" else "Standard Recording"
+                                        } else {
+                                            if (isAdbRecording) "Stealth Recording Active" else "Stealth Recording"
+                                        },
                                         color = MaterialTheme.colorScheme.onSurface,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
-                                        color = if (isAdbRecording)
+                                        color = if (secondaryIsRecording)
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                                        else if (adbPaired)
+                                        else if (swapHomeCards || adbPaired)
                                             EmeraldAccent.copy(alpha = 0.15f)
                                         else
                                             MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
                                     ) {
                                         Text(
-                                            text = if (isAdbRecording) "REC"
+                                            text = if (secondaryIsRecording) "REC"
+                                            else if (swapHomeCards) "MediaProjection"
                                             else if (adbPaired) "Ready"
                                             else "Pair Required",
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isAdbRecording)
+                                            color = if (secondaryIsRecording)
                                                 MaterialTheme.colorScheme.error
-                                            else if (adbPaired)
+                                            else if (swapHomeCards || adbPaired)
                                                 EmeraldAccent
                                             else
                                                 MaterialTheme.colorScheme.error,
@@ -1075,8 +1112,13 @@ fun HomeScreen(
                                 }
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (isAdbRecording) "Tap to stop recording session"
-                                    else "Undetectable capture • Bypasses app detection",
+                                    text = if (swapHomeCards) {
+                                        if (isRecordingActive) "Tap to stop recording session"
+                                        else "Standard screen capture • MediaProjection"
+                                    } else {
+                                        if (isAdbRecording) "Tap to stop recording session"
+                                        else "Undetectable capture • Bypasses app detection"
+                                    },
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     lineHeight = 15.sp,
@@ -2225,6 +2267,24 @@ fun AdbPairingDialog(
     var errorMsg by remember { mutableStateOf("") }
     var successMsg by remember { mutableStateOf(if (isPaired && AdbManager.isConnected) "Connected and ready!" else "") }
 
+    LaunchedEffect(isPaired) {
+        if (isPaired) {
+            serviceStarted = false
+            try {
+                context.stopService(Intent(context, PairingInputService::class.java))
+            } catch (_: Exception) {}
+            successMsg = "Device successfully paired and ready for stealth recording!"
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                context.stopService(Intent(context, PairingInputService::class.java))
+            } catch (_: Exception) {}
+        }
+    }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     fun launchServiceAndSettings() {
@@ -2439,7 +2499,7 @@ fun AdbPairingDialog(
                             Text("Start Pairing Helper", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
 
-                        if (serviceStarted) {
+                        if (serviceStarted && !isPaired) {
                             Surface(
                                 shape = RoundedCornerShape(14.dp),
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
@@ -2471,6 +2531,39 @@ fun AdbPairingDialog(
                                         }
                                     ) {
                                         Text("Stop", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        } else if (isPaired) {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = EmeraldAccent.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, EmeraldAccent.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Lucide.Shield,
+                                        contentDescription = null,
+                                        tint = EmeraldAccent,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "Pairing Complete",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = EmeraldAccent
+                                        )
+                                        Text(
+                                            "Device is paired and ready for stealth recording.",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                             }

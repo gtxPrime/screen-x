@@ -374,7 +374,11 @@ fun MainRecordShaderCard(
     isRecordingActive: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isDarkTheme: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    isDarkTheme: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
+    titleText: String? = null,
+    subtitleText: String? = null,
+    badgeText: String? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
     // Continuous flowing time animation (28-second smooth seamless loop)
     val infiniteTransition = rememberInfiniteTransition(label = "ShaderTimeTransition")
@@ -562,7 +566,7 @@ fun MainRecordShaderCard(
                             )
                     ) {
                         Icon(
-                            imageVector = Lucide.CircleDot,
+                            imageVector = icon ?: Lucide.CircleDot,
                             contentDescription = if (isRecordingActive) "Stop Recording" else "Start Recording",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
@@ -582,13 +586,13 @@ fun MainRecordShaderCard(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(Color.White)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "REC",
+                                text = badgeText ?: "REC",
                                 color = Color.White,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black,
@@ -602,7 +606,7 @@ fun MainRecordShaderCard(
             // Bottom Typography (Crisp Pure White with subtle shadow for 100% legibility on Gunmetal/Black)
             Column {
                 Text(
-                    text = if (isRecordingActive) "Recording" else "Record",
+                    text = titleText ?: (if (isRecordingActive) "Recording" else "Record"),
                     color = Color.White,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
@@ -618,7 +622,7 @@ fun MainRecordShaderCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = if (isRecordingActive) "Tap to stop capture" else "Tap to start capture",
+                    text = subtitleText ?: (if (isRecordingActive) "Tap to stop capture" else "Tap to start capture"),
                     color = Color.White.copy(alpha = 0.90f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
