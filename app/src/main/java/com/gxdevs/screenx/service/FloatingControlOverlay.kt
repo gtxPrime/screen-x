@@ -651,8 +651,18 @@ class FloatingControlOverlay(private val context: Context) {
     fun updateState() {
         isPausedState.value       = ScreenRecordService.isPaused
         isAdbRecordingState.value = AdbRecordService.isRecording
-        isRecordingState.value    = ScreenRecordService.isRecording || AdbRecordService.isRecording
+        val recordingNow = ScreenRecordService.isRecording || AdbRecordService.isRecording
+        isRecordingState.value    = recordingNow
         collapsePill()
+
+        overlayScope.launch {
+            val hideDuringRecord = settingsManager.hideDuringRecordFlow.first()
+            if (hideDuringRecord && recordingNow && !ScreenRecordService.isPaused) {
+                hideView()
+            } else {
+                showView()
+            }
+        }
     }
 
     private fun setInDismissZone(inZone: Boolean) {

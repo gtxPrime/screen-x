@@ -63,11 +63,43 @@ class AdbRecordService : LifecycleService() {
 
     private lateinit var settingsManager: SettingsManager
     private var outputPath: String? = null
+    @Volatile private var userStopRequested = false
+
+    private val screenOffReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                lifecycleScope.launch {
+                    val stopOnScreenOff = settingsManager.stopOnScreenOffFlow.first()
+                    if (stopOnScreenOff) {
+                        if (isRecording) {
+                            Log.i(TAG, "Screen off detected — stopping stealth recording")
+                            userStopRequested = true
+                            stopAdbRecording()
+                        }
+                        if (ScreenRecordService.isRecording) {
+                            Log.i(TAG, "Screen off detected — stopping standard recording")
+                            try {
+                                val stopIntent = Intent(this@AdbRecordService, ScreenRecordService::class.java).apply {
+                                    action = ScreenRecordService.ACTION_STOP
+                                }
+                                startService(stopIntent)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to send STOP to ScreenRecordService", e)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         settingsManager = SettingsManager(this)
         createNotificationChannel()
+
+        val screenOffFilter = android.content.IntentFilter(Intent.ACTION_SCREEN_OFF)
+        registerReceiver(screenOffReceiver, screenOffFilter)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +117,7 @@ class AdbRecordService : LifecycleService() {
 
     private fun startAdbRecording() {
         if (isRecording) return
+        userStopRequested = false
 
         try {
             val notification = buildNotification("Stealth Recording…")
@@ -102,6 +135,7 @@ class AdbRecordService : LifecycleService() {
             isRecording = true
             _isRecordingFlow.value = true
             notifyTileService()
+            showToast("Recording started")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start foreground service", e)
             showToast("Failed to start Stealth service: ${e.message}")
@@ -111,6 +145,7 @@ class AdbRecordService : LifecycleService() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             var recordingSuccess = false
+            val savedFiles = mutableListOf<File>()
             try {
                 // 1. Verify ADB is paired
                 val isPaired = settingsManager.adbPairedFlow.first()
@@ -132,40 +167,105 @@ class AdbRecordService : LifecycleService() {
                     return@launch
                 }
 
-                // Build output file path  /sdcard/Movies/ScreenX/ADB_YYYYMMDD_HHmmss.mp4
-                val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                // Output directory: /sdcard/Movies/ScreenX
                 val dir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
                     "ScreenX"
                 )
                 dir.mkdirs()
-                val outFile = File(dir, "ADB_$dateStr.mp4")
-                outputPath = outFile.absolutePath
 
-                // The stream blocks until screenrecord exits
-                // (either at TIME_LIMIT_SECS or when SIGINT arrives via ACTION_STOP_ADB)
-                val cmd = "screenrecord --time-limit $TIME_LIMIT_SECS ${outFile.absolutePath}"
-                Log.i(TAG, "Running: $cmd")
-                mgr.openStream("exec:$cmd").use { stream ->
-                    // Drain output — the stream closes when screenrecord exits
-                    val buf = ByteArray(1024)
-                    try {
-                        val inp = stream.openInputStream()
-                        while (inp.read(buf) != -1) { /* drain */ }
-                    } catch (_: Exception) {}
+                // Calculate display metrics for --size to prevent resolution mismatch on app switch
+                val wm = getSystemService(Context.WINDOW_SERVICE) as? android.view.WindowManager
+                val metrics = android.util.DisplayMetrics()
+                if (wm != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        val bounds = wm.maximumWindowMetrics.bounds
+                        metrics.widthPixels = bounds.width()
+                        metrics.heightPixels = bounds.height()
+                    } else {
+                        @Suppress("DEPRECATION")
+                        wm.defaultDisplay.getRealMetrics(metrics)
+                    }
                 }
-                Log.i(TAG, "screenrecord finished")
+                val width = metrics.widthPixels and 1.inv()
+                val height = metrics.heightPixels and 1.inv()
+                val sizeParam = if (width > 0 && height > 0) " --size ${width}x${height}" else ""
 
-                // Scan into MediaStore
-                if (outFile.exists() && outFile.length() > 0) {
-                    recordingSuccess = true
+                val dateStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                var partIndex = 1
+                var consecutiveFailures = 0
+
+                val sessionStartTime = System.currentTimeMillis()
+                val maxSessionDurationMs = TIME_LIMIT_SECS * 1000L
+
+                while (!userStopRequested && (System.currentTimeMillis() - sessionStartTime) < maxSessionDurationMs) {
+                    val remainingSecs = ((maxSessionDurationMs - (System.currentTimeMillis() - sessionStartTime)) / 1000L)
+                        .coerceAtLeast(10L).toInt()
+                    val partSuffix = if (partIndex == 1) "" else "_part$partIndex"
+                    val outFile = File(dir, "ADB_${dateStr}${partSuffix}.mp4")
+                    outputPath = outFile.absolutePath
+
+                    val cmd = "screenrecord --time-limit $remainingSecs$sizeParam ${outFile.absolutePath}"
+                    Log.i(TAG, "Running: $cmd")
+
+                    val partStartTime = System.currentTimeMillis()
+                    val outputLog = java.lang.StringBuilder()
+
+                    try {
+                        mgr.openStream("exec:$cmd").use { stream ->
+                            val buf = ByteArray(1024)
+                            val inp = stream.openInputStream()
+                            var bytesRead: Int
+                            while (inp.read(buf).also { bytesRead = it } != -1) {
+                                val chunk = String(buf, 0, bytesRead)
+                                outputLog.append(chunk)
+                                Log.d(TAG, "screenrecord output: $chunk")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "screenrecord stream exception: ${e.message}")
+                    }
+
+                    val partDurationMs = System.currentTimeMillis() - partStartTime
+                    Log.i(TAG, "screenrecord part $partIndex exited after ${partDurationMs}ms. Output: $outputLog")
+
+                    if (outFile.exists() && outFile.length() > 0) {
+                        savedFiles.add(outFile)
+                        recordingSuccess = true
+                        consecutiveFailures = 0
+                        partIndex++
+                    } else {
+                        consecutiveFailures++
+                        Log.w(TAG, "Part $partIndex ended without saving valid video. Failures: $consecutiveFailures")
+                        if (consecutiveFailures >= 3) {
+                            Log.e(TAG, "Multiple consecutive screenrecord failures, stopping session.")
+                            break
+                        }
+                    }
+
+                    // If user requested stop, break immediately
+                    if (userStopRequested) {
+                        break
+                    }
+
+                    // If screenrecord exited prematurely without user stop (e.g. app switch or surface transition),
+                    // allow the foreground window to settle before launching the next recording segment
+                    if (partDurationMs < 5000L) {
+                        kotlinx.coroutines.delay(400)
+                    }
+                }
+
+                // Scan all created files into MediaStore
+                if (savedFiles.isNotEmpty()) {
+                    val paths = savedFiles.map { it.absolutePath }.toTypedArray()
+                    val mimeTypes = Array(paths.size) { "video/mp4" }
                     MediaScannerConnection.scanFile(
                         this@AdbRecordService,
-                        arrayOf(outFile.absolutePath),
-                        arrayOf("video/mp4"),
+                        paths,
+                        mimeTypes,
                         null
                     )
-                    showToast("Stealth recording saved ✓")
+                    showToast("Recording stopped")
                     notifyRecordingSaved()
                 } else {
                     showToast("Stealth recording ended without saving video")
@@ -184,6 +284,7 @@ class AdbRecordService : LifecycleService() {
 
     private fun stopAdbRecording() {
         if (!isRecording) return
+        userStopRequested = true
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 // Send SIGINT so screenrecord finalises the MP4 properly
@@ -265,5 +366,12 @@ class AdbRecordService : LifecycleService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
             .build()
+    }
+
+    override fun onDestroy() {
+        try {
+            unregisterReceiver(screenOffReceiver)
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 }

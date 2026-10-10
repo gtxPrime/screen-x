@@ -211,6 +211,33 @@ class ScreenRecordService : LifecycleService() {
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
     }
 
+    private val screenOffReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                lifecycleScope.launch {
+                    val stopOnScreenOff = settingsManager.stopOnScreenOffFlow.first()
+                    if (stopOnScreenOff) {
+                        if (isRecording) {
+                            Log.i(TAG, "Screen off detected — stopping recording")
+                            stopRecording(reason = "Screen turned off")
+                        }
+                        if (AdbRecordService.isRecording) {
+                            Log.i(TAG, "Screen off detected — stopping stealth recording")
+                            try {
+                                val stopIntent = Intent(this@ScreenRecordService, AdbRecordService::class.java).apply {
+                                    action = AdbRecordService.ACTION_STOP_ADB
+                                }
+                                startService(stopIntent)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to send STOP to AdbRecordService", e)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -219,6 +246,9 @@ class ScreenRecordService : LifecycleService() {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         createNotificationChannel()
+
+        val screenOffFilter = android.content.IntentFilter(Intent.ACTION_SCREEN_OFF)
+        registerReceiver(screenOffReceiver, screenOffFilter)
 
         lifecycleScope.launch {
             AdbRecordService.isRecordingFlow.collect {
@@ -552,9 +582,17 @@ class ScreenRecordService : LifecycleService() {
                     }
                 }
 
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ScreenRecordService, "Recording started", Toast.LENGTH_SHORT).show()
+                }
+
                 // Show floating controls if set
                 if (showFloating) {
                     showFloatingControls()
+                    val hideDuringRecord = settingsManager.hideDuringRecordFlow.first()
+                    if (hideDuringRecord) {
+                        floatingControlOverlay?.hideView()
+                    }
                 }
 
                 // Register shake-to-stop detector
@@ -824,7 +862,7 @@ class ScreenRecordService : LifecycleService() {
                             if (reason != null) {
                                 Toast.makeText(this@ScreenRecordService, reason, Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(this@ScreenRecordService, "Screen recording saved successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@ScreenRecordService, "Recording stopped", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -1071,7 +1109,7 @@ class ScreenRecordService : LifecycleService() {
                     setPackage(packageName)
                 })
                 Handler(Looper.getMainLooper()).post {
-                    Toast.makeText(this@ScreenRecordService, "Screenshot saved to Pictures/ScreenX ✓", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ScreenRecordService, "Screenshot saved to Pictures/ScreenX", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1154,6 +1192,9 @@ class ScreenRecordService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(screenOffReceiver)
+        } catch (_: Exception) {}
         storageMonitorJob?.cancel()
         storageMonitorJob = null
         try {
