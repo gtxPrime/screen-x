@@ -40,6 +40,12 @@ class SettingsManager(private val context: Context) {
         val KEY_ADB_PAIRED       = booleanPreferencesKey("adb_paired")   // true once paired successfully
         val KEY_ADB_PRIVATE_KEY  = stringPreferencesKey("adb_private_key") // Base64 RSA private key
         val KEY_ADB_PUBLIC_KEY   = stringPreferencesKey("adb_public_key")  // Base64 RSA public key
+        // Stop recording when screen turns off
+        val KEY_STOP_ON_SCREEN_OFF = booleanPreferencesKey("stop_on_screen_off")
+        // Automatic update check on app launch
+        val KEY_AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
+        // Swap primary big card and secondary stealth card on Home Screen
+        val KEY_SWAP_HOME_CARDS = booleanPreferencesKey("swap_home_cards")
     }
 
     val fpsFlow: Flow<Int> = context.dataStore.data.map { preferences ->
@@ -82,6 +88,18 @@ class SettingsManager(private val context: Context) {
 
     val shakeToStopFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[KEY_SHAKE_TO_STOP] ?: false
+    }
+
+    val stopOnScreenOffFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_STOP_ON_SCREEN_OFF] ?: false
+    }
+
+    val autoCheckUpdatesFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_AUTO_CHECK_UPDATES] ?: true
+    }
+
+    val swapHomeCardsFlow: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_SWAP_HOME_CARDS] ?: false
     }
 
     val orientationFlow: Flow<String> = context.dataStore.data.map { preferences ->
@@ -291,6 +309,24 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[KEY_ADB_PRIVATE_KEY] = privateKeyB64
             preferences[KEY_ADB_PUBLIC_KEY]  = publicKeyB64
+        }
+    }
+
+    suspend fun setStopOnScreenOff(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_STOP_ON_SCREEN_OFF] = enabled
+        }
+    }
+
+    suspend fun setAutoCheckUpdates(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_AUTO_CHECK_UPDATES] = enabled
+        }
+    }
+
+    suspend fun setSwapHomeCards(swap: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SWAP_HOME_CARDS] = swap
         }
     }
 }
