@@ -650,7 +650,7 @@ class ScreenRecordService : LifecycleService() {
             if (hasAudio) {
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
+                setAudioSamplingRate(48000)
             }
 
             setVideoEncodingBitRate(bitrate)
