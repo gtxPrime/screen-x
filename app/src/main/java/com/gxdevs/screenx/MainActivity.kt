@@ -33,6 +33,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import com.gxdevs.screenx.data.AdbManager
 import com.gxdevs.screenx.data.SettingsManager
@@ -269,14 +270,17 @@ class MainActivity : ComponentActivity() {
                     refreshVideos()
                 }
 
+                val isDark = darkTheme
+                val scaffoldBg = if (isDark) MaterialTheme.colorScheme.background else Color(0xFFF5F6F9)
                 Scaffold(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = scaffoldBg
                 ) { innerPadding ->
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding),
-                        color = MaterialTheme.colorScheme.background
+                        color = scaffoldBg
                     ) {
                         AnimatedContent(
                             targetState = currentScreen,
@@ -304,8 +308,8 @@ class MainActivity : ComponentActivity() {
                                         settingsManager = settingsManager,
                                         onScreenshotClick = { triggerScreenshot() },
                                         onViewAllClick = { currentScreen = ScreenState.GALLERY },
-                                        onTrimVideoClick = {
-                                            selectedVideoForTrimming = null
+                                        onTrimVideoClick = { video ->
+                                            selectedVideoForTrimming = video
                                             currentScreen = ScreenState.TRIMMER
                                         },
                                         onSettingsClick = { currentScreen = ScreenState.SETTINGS }

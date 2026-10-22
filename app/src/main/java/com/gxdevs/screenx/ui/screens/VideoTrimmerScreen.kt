@@ -42,6 +42,10 @@ import com.composables.icons.lucide.RotateCcw
 import com.composables.icons.lucide.RotateCw
 import com.composables.icons.lucide.Save
 import com.composables.icons.lucide.Scissors
+import com.composables.icons.lucide.Trash2
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -265,6 +269,17 @@ fun TrimmerEditor(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
 
+    val videoDimensions = remember(videoUri) { VideoHelper.getVideoDimensions(context, videoUri) }
+    val videoRatio = remember(videoDimensions) {
+        if (videoDimensions != null && videoDimensions.second > 0) {
+            (videoDimensions.first.toFloat() / videoDimensions.second.toFloat()).coerceIn(0.42f, 2.4f)
+        } else {
+            9f / 16f
+        }
+    }
+    val isDark = isSystemInDarkTheme()
+    val canvasBg = if (isDark) Color(0xFF1E1F22) else Color(0xFFE2E4E9)
+
     // ── State ─────────────────────────────────────────────────────────────────
     var segments by remember(videoUri) {
         mutableStateOf(
@@ -479,9 +494,9 @@ fun TrimmerEditor(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         enabled = !isProcessing
                     ) {
-                        Icon(Lucide.Save, null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.save_video))
+                        Text(stringResource(R.string.save), fontWeight = FontWeight.Bold)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -509,169 +524,145 @@ fun TrimmerEditor(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
 
-            // ── Video player ──────────────────────────────────────────────
+            // ── Video preview canvas ──────────────────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1.3f)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .weight(1.2f)
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color.Black)
+                    .background(canvasBg),
+                contentAlignment = Alignment.Center
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-
-                // Playback controls overlay
-                Row(
+                Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                            )
-                        )
-                        .padding(bottom = 12.dp, top = 24.dp, start = 14.dp, end = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxHeight()
+                        .padding(vertical = 8.dp)
+                        .aspectRatio(videoRatio, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black)
                 ) {
-                    Text(
-                        formatTime(currentPosMs),
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
+                    AndroidView(
+                        factory = { ctx ->
+                            PlayerView(ctx).apply {
+                                player = exoPlayer
+                                useController = false
+                                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
                     )
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        IconButton(
-                            onClick = { exoPlayer.seekTo((currentPosMs - 5000).coerceAtLeast(0)) }
-                        ) {
-                            Icon(Lucide.RotateCcw, "-5s", tint = Color.White)
-                        }
-                        IconButton(
-                            onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
-                            modifier = Modifier
-                                .size(52.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        ) {
-                            Icon(
-                                if (isPlaying) Lucide.Pause else Lucide.Play,
-                                "Play/Pause", tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { exoPlayer.seekTo((currentPosMs + 5000).coerceAtMost(videoDurationMs)) }
-                        ) {
-                            Icon(Lucide.RotateCw, "+5s", tint = Color.White)
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            formatTime(videoDurationMs),
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 13.sp
-                        )
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color.White.copy(alpha = 0.22f),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    playbackSpeed = when (playbackSpeed) {
-                                        0.5f -> 1.0f
-                                        1.0f -> 1.25f
-                                        1.25f -> 1.5f
-                                        1.5f -> 2.0f
-                                        else -> 0.5f
-                                    }
-                                }
-                        ) {
-                            Text(
-                                text = "${playbackSpeed}x",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
                 }
             }
 
-            // ── Segment list horizontal view ─────────────────────────────
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+            // ── Dedicated Transport Control Row (True Centered) ────────────────
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(segments) { seg ->
-                    val isSelected = seg.id == (selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id)
-                    val isDeleted = seg.isDeleted
+                // Left: weight(1f) locked to CenterStart
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = formatTime(currentPosMs),
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "/ ${formatTime(videoDurationMs)}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                            color = Color(0xFF8E929B),
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 13.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
 
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = when {
-                            isSelected && isDeleted -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
-                            isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                            isDeleted -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        border = if (isSelected) BorderStroke(2.dp, if (isDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) else null,
+                // Center: -5s, Play/Pause (56.dp x 44.dp), +5s
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    IconButton(
+                        onClick = { exoPlayer.seekTo((currentPosMs - 5000).coerceAtLeast(0)) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.RotateCcw,
+                            contentDescription = "-5s",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { if (isPlaying) exoPlayer.pause() else exoPlayer.play() },
                         modifier = Modifier
+                            .width(56.dp)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { exoPlayer.seekTo((currentPosMs + 5000).coerceAtMost(videoDurationMs)) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Lucide.RotateCw,
+                            contentDescription = "+5s",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Right: weight(1f) locked to CenterEnd
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
                             .clickable {
-                                selectedSegmentId = seg.id
-                                exoPlayer.seekTo(seg.startMs)
+                                playbackSpeed = when (playbackSpeed) {
+                                    0.5f -> 1.0f
+                                    1.0f -> 1.25f
+                                    1.25f -> 1.5f
+                                    1.5f -> 2.0f
+                                    else -> 0.5f
+                                }
                             }
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = if (isDeleted) Lucide.Eraser else Lucide.Film,
-                                contentDescription = null,
-                                tint = if (isDeleted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "${formatTime(seg.startMs)} - ${formatTime(seg.endMs)}",
-                                color = if (isDeleted) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (isDeleted) {
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = stringResource(R.string.trimmer_deleted_tag),
-                                    color = MaterialTheme.colorScheme.error,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                        }
+                        Text(
+                            text = "${playbackSpeed}x",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
                     }
                 }
             }
@@ -687,50 +678,85 @@ fun TrimmerEditor(
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
 
-                        // Segment Status info
+                        // 3-Column Readout Bar: IN 00:02.4  |  0.7s SELECTED  |  OUT 00:03.1
                         val activeId = selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                         val activeSeg = segments.firstOrNull { it.id == activeId }
+                        val startText = if (activeSeg != null) formatTime(activeSeg.startMs) else "00:00.0"
+                        val durSec = if (activeSeg != null) (activeSeg.endMs - activeSeg.startMs) / 1000f else videoDurationMs / 1000f
+                        val durText = String.format(java.util.Locale.US, "%.1fs SELECTED", durSec)
+                        val endText = if (activeSeg != null) formatTime(activeSeg.endMs) else formatTime(videoDurationMs)
+
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+                                .padding(horizontal = 12.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (activeSeg != null) {
-                                InfoChip(stringResource(R.string.trimmer_sel_start), formatTime(activeSeg.startMs), MaterialTheme.colorScheme.primary)
-                                InfoChip(stringResource(R.string.trimmer_sel_duration), formatTime(activeSeg.endMs - activeSeg.startMs), MaterialTheme.colorScheme.tertiary)
-                                InfoChip(stringResource(R.string.trimmer_sel_end), formatTime(activeSeg.endMs), MaterialTheme.colorScheme.secondary)
-                            } else {
-                                InfoChip(stringResource(R.string.trimmer_start), "00:00.0", Color.Gray)
-                                InfoChip(stringResource(R.string.trimmer_duration_label), formatTime(videoDurationMs), Color.Gray)
-                                InfoChip(stringResource(R.string.trimmer_end), formatTime(videoDurationMs), Color.Gray)
+                            Text(
+                                text = "IN $startText",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFFACC15).copy(alpha = 0.18f))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = durText,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = if (isDark) Color(0xFFFDE047) else Color(0xFFB45309),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
                             }
+
+                            Text(
+                                text = "OUT $endText",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                maxLines = 1
+                            )
                         }
 
                         Spacer(Modifier.height(12.dp))
 
                         // ── Frame strip + handles ─────────────────────────────
-                        val errorColor = MaterialTheme.colorScheme.error
-                        val primaryColor = MaterialTheme.colorScheme.primary
+                        val warmAmber = Color(0xFFFACC15)
 
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(64.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1C1F26))
                                 .onGloballyPositioned { coords ->
                                     timelineWidthPx = coords.size.width.toFloat()
                                 }
                         ) {
-                            // Frame thumbnails
+                            // Frame thumbnails inside dark track container
                             Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(12.dp))
                             ) {
                                 thumbnails.forEach { bmp ->
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
                                             .fillMaxHeight()
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                            .background(Color(0xFF1C1F26))
                                     ) {
                                         if (bmp != null) {
                                             Image(
@@ -746,9 +772,8 @@ fun TrimmerEditor(
 
                             val currentActiveIdForHighlight = selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                             val currentActiveSegForHighlight = segments.firstOrNull { it.id == currentActiveIdForHighlight }
-                            val highlightColor = if (currentActiveSegForHighlight?.isDeleted == true) errorColor else primaryColor
 
-                            // Dimmed overlay for deleted segments & split vertical lines
+                            // Dimmed overlays & selection highlight
                             Canvas(modifier = Modifier.fillMaxSize()) {
                                 val W = size.width
                                 val H = size.height
@@ -756,11 +781,19 @@ fun TrimmerEditor(
                                 segments.forEach { seg ->
                                     val sX = (seg.startMs.toFloat() / videoDurationMs) * W
                                     val eX = (seg.endMs.toFloat() / videoDurationMs) * W
+                                    val isSelected = seg.id == currentActiveIdForHighlight
                                     
-                                    // Dim deleted segments
                                     if (seg.isDeleted) {
+                                        // Deleted segment: interior soft red tint
                                         drawRect(
-                                            color = errorColor.copy(alpha = 0.65f),
+                                            color = Color(0xFFE53935).copy(alpha = 0.55f),
+                                            topLeft = Offset(sX, 0f),
+                                            size = GeoSize(eX - sX, H)
+                                        )
+                                    } else if (!isSelected && segments.size > 1) {
+                                        // Unselected segment: dim so active segment pops!
+                                        drawRect(
+                                            color = Color.Black.copy(alpha = 0.55f),
                                             topLeft = Offset(sX, 0f),
                                             size = GeoSize(eX - sX, H)
                                         )
@@ -769,20 +802,20 @@ fun TrimmerEditor(
                                     // Draw split boundaries
                                     if (seg.startMs > 0L) {
                                         drawLine(
-                                            color = Color.Black.copy(alpha = 0.8f),
+                                            color = Color.Black.copy(alpha = 0.85f),
                                             start = Offset(sX, 0f),
                                             end = Offset(sX, H),
-                                            strokeWidth = 4f
+                                            strokeWidth = 3f
                                         )
                                     }
                                 }
 
-                                // Selected segment border highlight
+                                // Selected segment outer border: always Warm Amber (#FACC15)!
                                 if (currentActiveSegForHighlight != null) {
                                     val sX = (currentActiveSegForHighlight.startMs.toFloat() / videoDurationMs) * W
                                     val eX = (currentActiveSegForHighlight.endMs.toFloat() / videoDurationMs) * W
                                     drawRect(
-                                        color = highlightColor,
+                                        color = warmAmber,
                                         topLeft = Offset(sX, 0f),
                                         size = GeoSize(eX - sX, H),
                                         style = Stroke(width = 4f)
@@ -790,40 +823,52 @@ fun TrimmerEditor(
                                 }
                             }
 
-                            // Render handles for the selected/active segment
+                            // Render handles for the selected/active segment in Warm Amber (#FACC15)
                             val currentActiveIdForHandles = draggedSegmentId ?: selectedSegmentId ?: segments.firstOrNull { currentPosMs in it.startMs until it.endMs }?.id
                             val currentActiveSegForHandles = segments.firstOrNull { it.id == currentActiveIdForHandles }
                             if (currentActiveSegForHandles != null) {
-                                val hColor = if (currentActiveSegForHandles.isDeleted) errorColor else primaryColor
                                 val startFracOfSeg = currentActiveSegForHandles.startMs.toFloat() / videoDurationMs
                                 val endFracOfSeg = currentActiveSegForHandles.endMs.toFloat() / videoDurationMs
                                 
-                                val halfHandleWidthPx = with(density) { 14.dp.toPx() }
-                                val maxOffsetPx = (timelineWidthPx - with(density) { 28.dp.toPx() }).coerceAtLeast(0f)
+                                val handleWidthDp = 14.dp
+                                val halfHandleWidthPx = with(density) { (handleWidthDp / 2).toPx() }
+                                val maxOffsetPx = (timelineWidthPx - with(density) { handleWidthDp.toPx() }).coerceAtLeast(0f)
                                 
-                                // Left handle
+                                // Left handle (Warm Amber)
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
                                         .offset(x = with(density) { (startFracOfSeg * timelineWidthPx - halfHandleWidthPx).coerceIn(0f, maxOffsetPx).toDp() })
-                                        .width(28.dp)
+                                        .width(handleWidthDp)
                                         .fillMaxHeight()
-                                        .background(hColor.copy(alpha = 0.9f), RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)),
+                                        .background(warmAmber, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text("◁", color = Color.White, fontSize = 14.sp)
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.dp)
+                                            .height(24.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White)
+                                    )
                                 }
-                                // Right handle
+                                // Right handle (Warm Amber)
                                 Box(
                                     modifier = Modifier
                                         .align(Alignment.TopStart)
                                         .offset(x = with(density) { (endFracOfSeg * timelineWidthPx - halfHandleWidthPx).coerceIn(0f, maxOffsetPx).toDp() })
-                                        .width(28.dp)
+                                        .width(handleWidthDp)
                                         .fillMaxHeight()
-                                        .background(hColor.copy(alpha = 0.9f), RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp)),
+                                        .background(warmAmber, RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp)),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text("▷", color = Color.White, fontSize = 14.sp)
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.dp)
+                                            .height(24.dp)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(Color.White)
+                                    )
                                 }
                             }
 
@@ -834,9 +879,14 @@ fun TrimmerEditor(
                                     color = Color.White,
                                     start = Offset(x, 0f),
                                     end = Offset(x, size.height),
-                                    strokeWidth = 3f
+                                    strokeWidth = 2.5.dp.toPx(),
+                                    cap = StrokeCap.Round
                                 )
-                                drawCircle(color = Color.White, radius = 6f, center = Offset(x, 0f))
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 4.dp.toPx(),
+                                    center = Offset(x, 2.dp.toPx())
+                                )
                             }
 
                             val handleTouchPx = with(density) { 36.dp.toPx() }
@@ -977,57 +1027,100 @@ fun TrimmerEditor(
 
                         Spacer(Modifier.height(12.dp))
 
-                        // ── Fine adjustment controls ───────────────────────────
+                        // ── Fine adjustment controls (Floating Pill Dock) ───────
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                stringResource(R.string.trimmer_hint_timeline),
-                                color = Color.Gray, fontSize = 11.sp,
+                                text = "Drag handles to trim • Tap timeline to split",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp,
                                 textAlign = TextAlign.Center
                             )
-                            Spacer(Modifier.height(12.dp))
+                            Spacer(Modifier.height(10.dp))
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            // Centered Floating Toolbar Pill Dock (#1C1F26, RoundedCornerShape(32.dp))
+                            Surface(
+                                shape = RoundedCornerShape(32.dp),
+                                color = Color(0xFF1C1F26),
+                                shadowElevation = 3.dp,
+                                modifier = Modifier.padding(vertical = 2.dp)
                             ) {
-                                Button(
-                                    onClick = { splitAtPlayhead() },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                    shape = RoundedCornerShape(12.dp)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Lucide.Scissors, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(stringResource(R.string.split_here), fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
+                                    // Split Button (Neutral tonal button)
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = Color(0xFF2D3139),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable { splitAtPlayhead() }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Lucide.Scissors,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Split",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
 
-                                val isSelectedDeleted = segments.firstOrNull { it.id == activeId }?.isDeleted == true
-                                Button(
-                                    onClick = { toggleDeleteSelected() },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isSelectedDeleted) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isSelectedDeleted) Lucide.RotateCcw else Lucide.Eraser,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = if (isSelectedDeleted) stringResource(R.string.restore_part) else stringResource(R.string.delete_part),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp
-                                    )
+                                    // Delete / Restore Button (Tonal accent button)
+                                    val canDeletePart = segments.size > 1
+                                    val isSelectedDeleted = segments.firstOrNull { it.id == activeId }?.isDeleted == true
+
+                                    val actionBg = when {
+                                        !canDeletePart -> Color(0xFF2D3139).copy(alpha = 0.4f)
+                                        isSelectedDeleted -> Color(0xFF10B981).copy(alpha = 0.22f)
+                                        else -> Color(0xFFEF4444).copy(alpha = 0.22f)
+                                    }
+                                    val actionTint = when {
+                                        !canDeletePart -> Color.Gray.copy(alpha = 0.45f)
+                                        isSelectedDeleted -> Color(0xFF34D399)
+                                        else -> Color(0xFFF87171)
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = actionBg,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable(enabled = canDeletePart) { toggleDeleteSelected() }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(7.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isSelectedDeleted) Lucide.RotateCcw else Lucide.Trash2,
+                                                contentDescription = null,
+                                                tint = actionTint,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (isSelectedDeleted) "Restore" else "Delete",
+                                                color = actionTint,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

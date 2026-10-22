@@ -255,6 +255,134 @@ object VideoHelper {
     }
 
     /**
+     * Extracts video dimensions taking rotation into account.
+     * Returns Pair(width, height) or null if unable to determine.
+     */
+    fun getVideoDimensions(context: Context, uri: Uri): Pair<Int, Int>? {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            val widthStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val heightStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            val rotationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            val width = widthStr?.toIntOrNull() ?: 0
+            val height = heightStr?.toIntOrNull() ?: 0
+            val rotation = rotationStr?.toIntOrNull() ?: 0
+            if (width > 0 && height > 0) {
+                if (rotation == 90 || rotation == 270) {
+                    Pair(height, width)
+                } else {
+                    Pair(width, height)
+                }
+            } else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Converts a raw filename into a humanized, user-friendly display title.
+     * e.g. "ScreenX_1792657573355.mp4" or "ScreenX_1792661219615_1792663563327.mp4" -> "Recording • 1:56 PM"
+     */
+    fun getHumanizedTitle(item: RecordedVideo): String {
+        val baseName = item.name.substringBeforeLast(".")
+        if (baseName.startsWith("ScreenX", ignoreCase = true)) {
+            val allEpochMatches = Regex("(\\d{12,13})").findAll(baseName).toList()
+            val tsMillis = if (allEpochMatches.isNotEmpty()) {
+                allEpochMatches.last().value.toLongOrNull() ?: (if (item.dateAdded > 0) item.dateAdded * 1000L else System.currentTimeMillis())
+            } else if (item.dateAdded > 0) {
+                item.dateAdded * 1000L
+            } else {
+                System.currentTimeMillis()
+            }
+            val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(tsMillis))
+            return if (item.isVideo) "Recording • $timeStr" else "Screenshot • $timeStr"
+        }
+        return baseName
+    }
+
+    /**
+     * Short time title for grid cards (e.g. "2:56 PM" or custom user name).
+     */
+    fun getShortTimeTitle(item: RecordedVideo): String {
+        val baseName = item.name.substringBeforeLast(".")
+        if (baseName.startsWith("ScreenX", ignoreCase = true)) {
+            val allEpochMatches = Regex("(\\d{12,13})").findAll(baseName).toList()
+            val tsMillis = if (allEpochMatches.isNotEmpty()) {
+                allEpochMatches.last().value.toLongOrNull() ?: (if (item.dateAdded > 0) item.dateAdded * 1000L else System.currentTimeMillis())
+            } else if (item.dateAdded > 0) {
+                item.dateAdded * 1000L
+            } else {
+                System.currentTimeMillis()
+            }
+            return SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(tsMillis))
+        }
+        return baseName
+    }
+
+    /**
+     * Returns a human-friendly subtitle line:
+     * e.g. "Today • 11.3 MB • 1080p" or "Today • 1.2 MB"
+     */
+    fun getHumanizedSubtitle(item: RecordedVideo): String {
+        val ts = if (item.dateAdded > 0) item.dateAdded * 1000L else System.currentTimeMillis()
+        val itemDate = Date(ts)
+        val now = java.util.Calendar.getInstance()
+        val itemCal = java.util.Calendar.getInstance().apply { time = itemDate }
+
+        val isToday = now.get(java.util.Calendar.YEAR) == itemCal.get(java.util.Calendar.YEAR) &&
+                      now.get(java.util.Calendar.DAY_OF_YEAR) == itemCal.get(java.util.Calendar.DAY_OF_YEAR)
+
+        now.add(java.util.Calendar.DAY_OF_YEAR, -1)
+        val isYesterday = now.get(java.util.Calendar.YEAR) == itemCal.get(java.util.Calendar.YEAR) &&
+                          now.get(java.util.Calendar.DAY_OF_YEAR) == itemCal.get(java.util.Calendar.DAY_OF_YEAR)
+
+        val dateStr = when {
+            isToday -> "Today"
+            isYesterday -> "Yesterday"
+            else -> SimpleDateFormat("d MMM", Locale.getDefault()).format(itemDate)
+        }
+
+        val sizeStr = formatSize(item.size)
+
+        return if (item.isVideo) {
+            val cleanRes = getCleanResolution(item.resolution)
+            if (cleanRes.isNotEmpty()) {
+                "$dateStr • $sizeStr • $cleanRes"
+            } else {
+                "$dateStr • $sizeStr"
+            }
+        } else {
+            "$dateStr • $sizeStr"
+        }
+    }
+
+    fun getCleanResolution(raw: String): String {
+        if (raw.isBlank() || raw.equals("Unknown", ignoreCase = true) || raw.equals("Screenshot", ignoreCase = true)) {
+            return ""
+        }
+        if (raw.contains("x", ignoreCase = true)) {
+            val parts = raw.split("x", "X")
+            val w = parts.getOrNull(0)?.trim()?.toIntOrNull()
+            val h = parts.getOrNull(1)?.trim()?.toIntOrNull()
+            if (w != null && h != null) {
+                val minDim = minOf(w, h)
+                return when {
+                    minDim >= 2160 -> "4K"
+                    minDim >= 1440 -> "1440p"
+                    minDim >= 1080 -> "1080p"
+                    minDim >= 720 -> "720p"
+                    minDim >= 480 -> "480p"
+                    else -> "${minDim}p"
+                }
+            }
+        }
+        return raw
+    }
+
+    /**
      * Deletes a video or screenshot.
      */
     fun deleteVideo(context: Context, video: RecordedVideo, onRecoverableException: (Intent) -> Unit = {}): Boolean {

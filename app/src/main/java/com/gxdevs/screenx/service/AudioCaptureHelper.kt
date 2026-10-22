@@ -175,17 +175,47 @@ class AudioCaptureHelper(
                     .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
                     .build()
 
-                audioRecord = AudioRecord.Builder()
-                    .setAudioPlaybackCaptureConfig(captureConfig)
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(audioFormat)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(channelConfig)
+                var primaryRec: AudioRecord? = null
+                try {
+                    primaryRec = AudioRecord.Builder()
+                        .setAudioPlaybackCaptureConfig(captureConfig)
+                        .setAudioFormat(
+                            AudioFormat.Builder()
+                                .setEncoding(audioFormat)
+                                .setSampleRate(sampleRate)
+                                .setChannelMask(channelConfig)
+                                .build()
+                        )
+                        .setBufferSizeInBytes(bufferSize)
+                        .build()
+                } catch (e: Exception) {
+                    Log.w(TAG, "AudioPlaybackCapture build at $sampleRate Hz failed", e)
+                }
+
+                if (primaryRec == null || primaryRec.state != AudioRecord.STATE_INITIALIZED) {
+                    val altRate = if (sampleRate == 48000) 44100 else 48000
+                    val altBufferSize = AudioRecord.getMinBufferSize(altRate, channelConfig, audioFormat).coerceAtLeast(CHUNK_BYTES * 4)
+                    try {
+                        primaryRec?.release()
+                        primaryRec = AudioRecord.Builder()
+                            .setAudioPlaybackCaptureConfig(captureConfig)
+                            .setAudioFormat(
+                                AudioFormat.Builder()
+                                    .setEncoding(audioFormat)
+                                    .setSampleRate(altRate)
+                                    .setChannelMask(channelConfig)
+                                    .build()
+                            )
+                            .setBufferSizeInBytes(altBufferSize)
                             .build()
-                    )
-                    .setBufferSizeInBytes(bufferSize)
-                    .build()
+                        if (primaryRec.state == AudioRecord.STATE_INITIALIZED) {
+                            Log.d(TAG, "AudioPlaybackCapture initialized with fallback rate $altRate Hz")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "AudioPlaybackCapture fallback build at $altRate Hz failed", e)
+                    }
+                }
+                audioRecord = primaryRec
 
                 if (audioSource == "MicSystem") {
                     val secondary = tryCreateStereoMic(bufferSize)?.also { isMicMono = false }
@@ -689,9 +719,10 @@ class AudioCaptureHelper(
             .coerceAtLeast(CHUNK_BYTES * 2)
 
         val sources = listOf(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION",
             MediaRecorder.AudioSource.MIC                 to "MIC",
-            MediaRecorder.AudioSource.CAMCORDER           to "CAMCORDER"
+            MediaRecorder.AudioSource.CAMCORDER           to "CAMCORDER",
+            MediaRecorder.AudioSource.VOICE_RECOGNITION   to "VOICE_RECOGNITION",
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION to "VOICE_COMMUNICATION"
         )
         for ((src, name) in sources) {
             try {

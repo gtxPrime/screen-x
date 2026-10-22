@@ -567,12 +567,29 @@ fun MainRecordShaderCard(
                                 shape = CircleShape
                             )
                     ) {
-                        Icon(
-                            imageVector = icon ?: Lucide.CircleDot,
-                            contentDescription = if (isRecordingActive) stringResource(R.string.home_tap_to_stop) else stringResource(R.string.home_tap_to_start),
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        if (icon != null) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = if (isRecordingActive) stringResource(R.string.home_tap_to_stop) else stringResource(R.string.home_tap_to_start),
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            // Target Record Icon with subtle crimson/coral accent dot hinting at recording
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .border(2.dp, Color.White, CircleShape)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isRecordingActive) Color.White else Color(0xFFFF3B30))
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -611,8 +628,8 @@ fun MainRecordShaderCard(
                     text = titleText ?: (if (isRecordingActive) stringResource(R.string.home_recording_btn) else stringResource(R.string.home_record_btn)),
                     color = Color.White,
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.3).sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.8).sp,
                     lineHeight = 26.sp,
                     style = LocalTextStyle.current.copy(
                         shadow = Shadow(
